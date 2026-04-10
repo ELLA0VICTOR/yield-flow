@@ -4,6 +4,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @layer base {
   :root {
     --background: #fff8dc;
@@ -56,7 +68,7 @@
   }
 
   .section-inner {
-    @apply mx-auto w-full max-w-[1380px] px-4 md:px-6;
+    @apply mx-auto w-full max-w-[1440px] px-4 md:px-6;
   }
 
   .retro-panel {
@@ -112,7 +124,7 @@
   }
 
   .hero-title {
-    @apply mx-auto mt-6 max-w-4xl font-head text-4xl leading-[1.02] text-foreground md:text-6xl;
+    @apply mx-auto mt-6 max-w-none font-head text-[2rem] leading-[1.04] text-foreground md:text-[3.3rem];
   }
 
   .hero-copy {
@@ -129,5 +141,20 @@
 
   .section-copy {
     @apply mt-4 text-base leading-8 text-muted-foreground;
+  }
+
+  .motion-rise {
+    animation: riseIn 500ms ease-out both;
+  }
+
+  .motion-rise-delay {
+    animation: riseIn 650ms ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .motion-rise,
+    .motion-rise-delay {
+      animation: none;
+    }
   }
 }

@@ -8,6 +8,7 @@ import {
 export function VaultCard({ vault, isSelected, onSelect }) {
   const totalApy = vault.analytics?.apy?.total;
   const averageApy = vault.analytics?.apy30d;
+  const primaryAsset = vault.underlyingTokens?.[0]?.symbol || 'Unknown asset';
 
   return (
     <button
@@ -18,6 +19,7 @@ export function VaultCard({ vault, isSelected, onSelect }) {
       onClick={() => onSelect(vault)}
     >
       <div className="absolute inset-x-0 top-0 h-3 border-b-2 border-border bg-primary" />
+
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <div className="mb-2 mt-2 flex flex-wrap gap-2">
@@ -27,23 +29,24 @@ export function VaultCard({ vault, isSelected, onSelect }) {
             </span>
             {isSelected && <span className="retro-badge">Pinned</span>}
           </div>
+
           <h3 className="font-head text-xl text-foreground">{vault.name}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {vault.protocol?.name || 'Unknown protocol'}
+            {vault.protocol?.name || 'Unknown protocol'} / {primaryAsset}
           </p>
         </div>
+
         <div className="text-right">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Total APY</p>
-          <p className="font-head text-3xl text-foreground">{formatPercent(totalApy)}</p>
+          <p className="font-head text-[2rem] text-foreground">{formatPercent(totalApy)}</p>
         </div>
       </div>
 
-      <p className="min-h-[4.25rem] text-sm leading-7 text-muted-foreground">
-        {vault.description ||
-          'Normalized vault metadata from LI.FI Earn, ready to compare against APY stability and transactional support.'}
+      <p className="text-sm leading-7 text-muted-foreground">
+        {vault.description || 'Stablecoin vault discovered through LI.FI Earn.'}
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="retro-metric">
           <span className="metric-label">30d avg</span>
           <span className="metric-value">{formatPercent(averageApy)}</span>
@@ -67,9 +70,7 @@ export function VaultCard({ vault, isSelected, onSelect }) {
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t-2 border-border pt-4 text-sm text-muted-foreground">
-        <span>
-          {vault.underlyingTokens?.map((token) => token.symbol).join(', ') || 'Unknown assets'}
-        </span>
+        <span>{vault.underlyingTokens?.map((token) => token.symbol).join(', ') || 'Unknown assets'}</span>
         <span>Updated {formatRelativeTime(vault.analytics?.updatedAt || vault.syncedAt)}</span>
       </div>
     </button>

@@ -1,20 +1,8 @@
-import { COMPOSER_API_BASE, EARN_API_BASE } from './constants';
-
-function getHeaders() {
-  const headers = {};
-  const apiKey = import.meta.env.VITE_LIFI_API_KEY;
-
-  if (apiKey) {
-    headers['x-lifi-api-key'] = apiKey;
-  }
-
-  return headers;
-}
+const EARN_PROXY_BASE = '/api/earn';
+const QUEST_PROXY_BASE = '/api/quest';
 
 async function requestJson(url) {
-  const response = await fetch(url, {
-    headers: getHeaders(),
-  });
+  const response = await fetch(url);
 
   const payload = await response.json().catch(() => null);
 
@@ -48,22 +36,37 @@ export async function fetchVaults(filters) {
     params.set('cursor', filters.cursor);
   }
 
-  return requestJson(`${EARN_API_BASE}/v1/earn/vaults?${params.toString()}`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/vaults?${params.toString()}`);
 }
 
 export async function fetchChains() {
-  return requestJson(`${EARN_API_BASE}/v1/earn/chains`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/chains`);
+}
+
+export async function fetchWalletChains() {
+  const result = await requestJson(`${QUEST_PROXY_BASE}/v1/chains?chainTypes=EVM`);
+  return result.chains || [];
 }
 
 export async function fetchProtocols() {
-  return requestJson(`${EARN_API_BASE}/v1/earn/protocols`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/protocols`);
 }
 
 export async function fetchPortfolioPositions(address) {
-  return requestJson(`${EARN_API_BASE}/v1/earn/portfolio/${address}/positions`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/portfolio/${address}/positions`);
 }
 
 export async function fetchComposerQuote(params) {
   const query = new URLSearchParams(params);
-  return requestJson(`${COMPOSER_API_BASE}/v1/quote?${query.toString()}`);
+  return requestJson(`${QUEST_PROXY_BASE}/v1/quote?${query.toString()}`);
+}
+
+export async function fetchComposerStatus({ txHash, fromChain, toChain }) {
+  const query = new URLSearchParams({
+    txHash,
+    fromChain: String(fromChain),
+    toChain: String(toChain),
+  });
+
+  return requestJson(`${QUEST_PROXY_BASE}/v1/status?${query.toString()}`);
 }

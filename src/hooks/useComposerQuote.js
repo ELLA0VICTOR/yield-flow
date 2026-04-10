@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { getFriendlyTransactionMessage } from '../lib/errors';
 import { fetchComposerQuote } from '../lib/lifi';
 
 export function useComposerQuote() {
@@ -15,7 +16,7 @@ export function useComposerQuote() {
       setQuote(nextQuote);
       return nextQuote;
     } catch (quoteError) {
-      setError(quoteError.message || 'Unable to fetch Composer quote');
+      setError(getFriendlyTransactionMessage(quoteError, 'quote').message);
       setQuote(null);
       throw quoteError;
     } finally {

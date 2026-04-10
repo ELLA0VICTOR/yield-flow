@@ -27,7 +27,6 @@ export const STABLE_ASSETS = ['USDC', 'USDT', 'DAI', 'USDS', 'EURC'];
 
 export const NAV_ITEMS = [
   { label: 'Why YieldFlow', href: '#why' },
-  { label: 'How It Works', href: '#flow' },
   { label: 'Explorer', href: '#explore' },
   { label: 'Portfolio', href: '#portfolio' },
 ];
@@ -35,48 +34,18 @@ export const NAV_ITEMS = [
 export const LANDING_CARDS = [
   {
     eyebrow: 'Compare',
-    title: 'See the important numbers fast.',
-    description:
-      'Current APY, 30-day average, TVL, and deposit readiness are visible without digging through protocol pages.',
+    title: 'Scan faster.',
+    description: 'APY, 30-day average, TVL, and deposit readiness are easy to compare.',
   },
   {
     eyebrow: 'Deposit',
-    title: 'Preview the route before action.',
-    description:
-      'Composer turns the selected vault address into an executable quote so the deposit flow stays simple for the user.',
+    title: 'Preview the route.',
+    description: 'Get a Composer quote before you approve or deposit.',
   },
   {
     eyebrow: 'Verify',
-    title: 'Check positions after the move.',
-    description:
-      'Portfolio lookup makes it easy to confirm what happened after deposit instead of stopping at a success toast.',
-  },
-];
-
-export const WORKFLOW_STEPS = [
-  {
-    step: '01',
-    title: 'Scan indexed vaults',
-    description:
-      'Pull normalized vault data from LI.FI Earn across chains, protocols, APY, TVL, caps, and metadata.',
-  },
-  {
-    step: '02',
-    title: 'Compare responsibly',
-    description:
-      'Stack current APY against 30d average, transactional readiness, tags, KYC, and timelock before acting.',
-  },
-  {
-    step: '03',
-    title: 'Trigger Composer',
-    description:
-      'Use the selected vault contract as toToken, let Composer produce the executable route, then prepare approval and deposit.',
-  },
-  {
-    step: '04',
-    title: 'Verify the position',
-    description:
-      'Refresh the portfolio endpoint and show the user the resulting vault balance and tracked USD value.',
+    title: 'Confirm the result.',
+    description: 'Check positions after deposit instead of stopping at a success state.',
   },
 ];
 

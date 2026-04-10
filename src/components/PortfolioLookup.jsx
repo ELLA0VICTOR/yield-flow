@@ -1,16 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePortfolioLookup } from '../hooks/usePortfolioLookup';
 import { formatCurrency, truncateAddress } from '../lib/formatters';
 
-export function PortfolioLookup() {
+export function PortfolioLookup({
+  connectedAccount = '',
+  autoAddress = '',
+  refreshToken = 0,
+}) {
   const [walletAddress, setWalletAddress] = useState('');
   const { positions, isLoading, error, lookup } = usePortfolioLookup();
+  const activeAddress = useMemo(
+    () => walletAddress || autoAddress || connectedAccount,
+    [autoAddress, connectedAccount, walletAddress]
+  );
 
   const totalBalance = positions.reduce((sum, position) => sum + Number(position.balanceUsd || 0), 0);
 
+  useEffect(() => {
+    if (!autoAddress || !refreshToken) {
+      return;
+    }
+
+    void lookup(autoAddress);
+  }, [autoAddress, lookup, refreshToken]);
+
   async function handleSubmit(event) {
     event.preventDefault();
-    await lookup(walletAddress);
+    await lookup(activeAddress);
   }
 
   return (
@@ -21,7 +37,7 @@ export function PortfolioLookup() {
           <h2 className="font-head text-2xl text-foreground md:text-3xl">Check positions</h2>
         </div>
         <p className="max-w-xl text-sm text-muted-foreground">
-          Paste a wallet address to see Earn positions.
+          Use the connected wallet or paste any address to see Earn positions.
         </p>
       </div>
 
@@ -32,9 +48,20 @@ export function PortfolioLookup() {
           value={walletAddress}
           onChange={(event) => setWalletAddress(event.target.value)}
         />
-        <button type="submit" className="retro-button" disabled={isLoading}>
-          {isLoading ? 'Checking...' : 'Load positions'}
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {connectedAccount && (
+            <button
+              type="button"
+              className="retro-button retro-button-secondary"
+              onClick={() => setWalletAddress(connectedAccount)}
+            >
+              Use Connected Wallet
+            </button>
+          )}
+          <button type="submit" className="retro-button" disabled={isLoading}>
+            {isLoading ? 'Checking...' : 'Load positions'}
+          </button>
+        </div>
       </form>
 
       {error && (
@@ -53,7 +80,9 @@ export function PortfolioLookup() {
           </div>
           <div className="retro-metric">
             <span className="metric-label">Wallet</span>
-            <span className="metric-value">{truncateAddress(walletAddress, 8, 6)}</span>
+            <span className="metric-value">
+              {truncateAddress(activeAddress, 8, 6)}
+            </span>
           </div>
         </div>
       )}

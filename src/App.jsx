@@ -1,19 +1,27 @@
 import { useMemo, useState } from 'react';
 import { FilterBar } from './components/FilterBar';
 import { PortfolioLookup } from './components/PortfolioLookup';
+import { ToastNotice } from './components/ToastNotice';
 import { VaultCard } from './components/VaultCard';
 import { VaultDetailPanel } from './components/VaultDetailPanel';
+import { WalletModal } from './components/WalletModal';
+import { useWallet } from './hooks/useWallet';
 import { useVaultExplorer } from './hooks/useVaultExplorer';
 import { DEFAULT_VAULT_FILTERS, LANDING_CARDS, NAV_ITEMS } from './lib/constants';
-import { formatPercent } from './lib/formatters';
+import { formatCurrency, formatPercent, truncateAddress } from './lib/formatters';
 
 function App() {
   const [draftFilters, setDraftFilters] = useState(DEFAULT_VAULT_FILTERS);
   const [activeFilters, setActiveFilters] = useState(DEFAULT_VAULT_FILTERS);
   const [selectedVaultKey, setSelectedVaultKey] = useState('');
+  const [portfolioAutoAddress, setPortfolioAutoAddress] = useState('');
+  const [portfolioRefreshToken, setPortfolioRefreshToken] = useState(0);
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const wallet = useWallet();
 
   const {
     chains,
+    walletChains,
     protocols,
     vaults,
     total,
@@ -79,6 +87,13 @@ function App() {
     return matchingVault || visibleVaults[0];
   }, [selectedVaultKey, visibleVaults]);
 
+  const featuredVault = selectedVault || visibleVaults[0] || null;
+
+  const connectedWalletChain = useMemo(
+    () => walletChains.find((chain) => Number(chain.id) === Number(wallet.chainId)) || null,
+    [wallet.chainId, walletChains]
+  );
+
   function updateDraftFilter(key, value) {
     setDraftFilters((current) => ({
       ...current,
@@ -100,6 +115,24 @@ function App() {
   function resetFilters() {
     setDraftFilters(DEFAULT_VAULT_FILTERS);
     setActiveFilters(DEFAULT_VAULT_FILTERS);
+  }
+
+  function handleDepositSuccess(address) {
+    if (!address) {
+      return;
+    }
+
+    setPortfolioAutoAddress(address);
+    setPortfolioRefreshToken((current) => current + 1);
+  }
+
+  async function handleWalletSelection(option) {
+    try {
+      await wallet.connectWallet(option.id);
+      setIsWalletModalOpen(false);
+    } catch {
+      setIsWalletModalOpen(false);
+    }
   }
 
   return (
@@ -125,53 +158,152 @@ function App() {
             ))}
           </div>
 
-          <a href="#explore" className="retro-button">
-            Explore Vaults
-          </a>
+          {wallet.isConnected ? (
+            <div className="flex items-center gap-3">
+              <div className="hidden border-2 border-border bg-card px-3 py-2 shadow-retro sm:block">
+                <p className="text-[11px] font-head uppercase tracking-[0.16em] text-muted-foreground">
+                  {wallet.activeWallet?.name || connectedWalletChain?.name || 'Connected'}
+                </p>
+                <p className="mt-1 text-sm font-medium text-foreground">
+                  {truncateAddress(wallet.account, 6, 4)}
+                </p>
+              </div>
+              <button type="button" className="retro-button" onClick={wallet.refreshWallet}>
+                Connected
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="retro-button"
+              onClick={() => setIsWalletModalOpen(true)}
+              disabled={wallet.isConnecting}
+            >
+              {wallet.isConnecting ? 'Connecting...' : wallet.hasProvider ? 'Connect Wallet' : 'Select Wallet'}
+            </button>
+          )}
         </div>
       </nav>
 
       <header className="section-band">
-        <div className="section-inner py-16 text-center md:py-20">
-          <div className="mx-auto inline-flex items-center gap-2 border-2 border-border bg-card px-4 py-2 shadow-retro">
-            <span className="font-head text-xs uppercase tracking-[0.16em] text-foreground">
-              LI.FI Earn
-            </span>
-            <span className="text-xs text-muted-foreground">Yield Builder</span>
+        <div className="section-inner py-14 md:py-18">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 border-2 border-border bg-card px-4 py-2 shadow-retro">
+              <span className="font-head text-xs uppercase tracking-[0.16em] text-foreground">
+                LI.FI Earn
+              </span>
+              <span className="text-xs text-muted-foreground">Yield Builder</span>
+            </div>
+
+            <h1 className="hero-title motion-rise">
+              Discover the best stablecoin yield.
+              <br />
+              Deposit in one click.
+            </h1>
+
+            <p className="hero-copy motion-rise-delay">
+              Compare live vaults, preview the deposit route, and confirm the resulting position in
+              one place.
+            </p>
+
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a href="#explore" className="retro-button">
+                Browse Vaults
+              </a>
+              <a href="#portfolio" className="retro-button retro-button-secondary">
+                View Portfolio
+              </a>
+            </div>
+
+            <div className="mx-auto mt-8 grid max-w-3xl gap-4 text-left md:grid-cols-3">
+              <div className="retro-metric">
+                <span className="metric-label">Vaults loaded</span>
+                <span className="metric-value">{visibleVaults.length}</span>
+              </div>
+              <div className="retro-metric">
+                <span className="metric-label">Deposit ready</span>
+                <span className="metric-value">{stats.depositableShare}</span>
+              </div>
+              <div className="retro-metric">
+                <span className="metric-label">Average APY</span>
+                <span className="metric-value">{stats.averageApy}</span>
+              </div>
+            </div>
           </div>
 
-          <h1 className="hero-title">
-            Discover the best stablecoin yield.
-            <br />
-            Deposit in one click.
-          </h1>
+          <div className="mx-auto mt-10 max-w-5xl motion-rise-delay">
+            <div className="retro-panel p-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="text-left">
+                  <p className="eyebrow">Featured vault</p>
+                  <h2 className="mt-2 font-head text-2xl text-foreground">Top pick right now</h2>
+                </div>
+                {featuredVault?.isTransactional && (
+                  <span className="retro-badge retro-badge-success self-start">Deposit ready</span>
+                )}
+              </div>
 
-          <p className="hero-copy">
-            Compare vaults, preview Composer deposits, and check positions without jumping across
-            protocols or chains.
-          </p>
+              {featuredVault ? (
+                <>
+                  <div className="mt-5 flex flex-col gap-4 text-left md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="font-head text-3xl text-foreground">{featuredVault.name}</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {featuredVault.protocol?.name || 'Unknown protocol'} on {featuredVault.network}
+                      </p>
+                    </div>
+                    <div className="text-left md:text-right">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">APY</p>
+                      <p className="font-head text-4xl text-foreground">
+                        {formatPercent(featuredVault.analytics?.apy?.total)}
+                      </p>
+                    </div>
+                  </div>
 
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#explore" className="retro-button">
-              Browse Vaults
-            </a>
-            <a href="#portfolio" className="retro-button retro-button-secondary">
-              View Portfolio
-            </a>
-          </div>
+                  <div className="mt-5 grid gap-3 md:grid-cols-3">
+                    <div className="retro-metric">
+                      <span className="metric-label">30d avg</span>
+                      <span className="metric-value">
+                        {formatPercent(featuredVault.analytics?.apy30d)}
+                      </span>
+                    </div>
+                    <div className="retro-metric">
+                      <span className="metric-label">TVL</span>
+                      <span className="metric-value">
+                        {formatCurrency(featuredVault.analytics?.tvl?.usd)}
+                      </span>
+                    </div>
+                    <div className="retro-metric">
+                      <span className="metric-label">Deposit token</span>
+                      <span className="metric-value">
+                        {featuredVault.underlyingTokens?.[0]?.symbol || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
 
-          <div className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-3">
-            <div className="retro-metric text-left">
-              <span className="metric-label">Vaults loaded</span>
-              <span className="metric-value">{visibleVaults.length}</span>
-            </div>
-            <div className="retro-metric text-left">
-              <span className="metric-label">Deposit ready</span>
-              <span className="metric-value">{stats.depositableShare}</span>
-            </div>
-            <div className="retro-metric text-left">
-              <span className="metric-label">Average APY</span>
-              <span className="metric-value">{stats.averageApy}</span>
+                  <div className="mt-5 flex flex-col gap-3 text-left sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Same-chain demo path: {featuredVault.network} +{' '}
+                      {featuredVault.underlyingTokens?.[0]?.symbol || 'stablecoin'}
+                    </p>
+                    <a
+                      href="#explore"
+                      className="retro-button"
+                      onClick={() =>
+                        setSelectedVaultKey(
+                          `${featuredVault.chainId}-${featuredVault.address.toLowerCase()}`
+                        )
+                      }
+                    >
+                      Open Deposit Studio
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-5 text-left text-sm text-muted-foreground">
+                  Loading a featured vault from LI.FI Earn.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -181,10 +313,10 @@ function App() {
         <div className="section-inner py-12">
           <div className="section-heading">
             <p className="eyebrow">Why YieldFlow</p>
-            <h2 className="section-title">Simple, clear, and useful.</h2>
+            <h2 className="section-title">Simple, clear, and ready to use.</h2>
             <p className="section-copy">
-              The product should feel obvious: scan vaults, compare quickly, and move into deposit
-              only when the user is ready.
+              The flow stays focused: scan, compare, quote, and deposit without bouncing between
+              protocol pages.
             </p>
           </div>
 
@@ -206,8 +338,7 @@ function App() {
             <p className="eyebrow">Explorer</p>
             <h2 className="section-title">Choose a vault with confidence.</h2>
             <p className="section-copy">
-              Filter the live feed, compare vaults side by side, and open a quote preview for the
-              one you want.
+              Filter the live feed, compare vaults clearly, and open the deposit studio below.
             </p>
           </div>
 
@@ -223,60 +354,95 @@ function App() {
             />
           </div>
 
-          <div className="mt-8 grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
-            <div className="space-y-5">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="mt-8 space-y-8">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div>
                 <h2 className="font-head text-3xl text-foreground">Live Vaults</h2>
-                <p className="text-sm text-muted-foreground">
-                  Showing {visibleVaults.length} of {total}
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Browse the vault list first, then use the selected vault panel to deposit.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="retro-metric">
+                  <span className="metric-label">Showing</span>
+                  <span className="metric-value">
+                    {visibleVaults.length} of {total}
+                  </span>
+                </div>
+                <div className="retro-metric">
+                  <span className="metric-label">Selected</span>
+                  <span className="metric-value">
+                    {selectedVault?.name || 'No vault'}
+                  </span>
+                </div>
+                <div className="retro-metric">
+                  <span className="metric-label">Demo path</span>
+                  <span className="metric-value">
+                    {selectedVault?.network || 'Base'} +{' '}
+                    {selectedVault?.underlyingTokens?.[0]?.symbol || 'USDC'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
+                {error}
+              </div>
+            )}
+
+            {isVaultLoading ? (
+              <div className="retro-panel p-10 text-center text-muted-foreground">
+                Loading vaults...
+              </div>
+            ) : visibleVaults.length === 0 ? (
+              <div className="retro-panel p-10 text-center">
+                <h3 className="font-head text-2xl text-foreground">No vaults found.</h3>
+                <p className="mt-3 text-muted-foreground">
+                  Try a wider chain, asset, or TVL range.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                {visibleVaults.map((vault) => (
+                  <VaultCard
+                    key={`${vault.chainId}-${vault.address}`}
+                    vault={vault}
+                    isSelected={
+                      selectedVaultKey === `${vault.chainId}-${vault.address.toLowerCase()}`
+                    }
+                    onSelect={(nextVault) =>
+                      setSelectedVaultKey(
+                        `${nextVault.chainId}-${nextVault.address.toLowerCase()}`
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div className="section-heading max-w-none">
+                <p className="eyebrow">Selected vault</p>
+                <h3 className="section-title">Review and deposit.</h3>
+                <p className="section-copy">
+                  Once you pick a vault from the grid, the full deposit flow appears here.
                 </p>
               </div>
 
-              {error && (
-                <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
-                  {error}
-                </div>
-              )}
-
-              {isVaultLoading ? (
-                <div className="retro-panel p-10 text-center text-muted-foreground">
-                  Loading vaults...
-                </div>
-              ) : visibleVaults.length === 0 ? (
-                <div className="retro-panel p-10 text-center">
-                  <h3 className="font-head text-2xl text-foreground">No vaults found.</h3>
-                  <p className="mt-3 text-muted-foreground">
-                    Try a wider chain, asset, or TVL range.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {visibleVaults.map((vault) => (
-                    <VaultCard
-                      key={`${vault.chainId}-${vault.address}`}
-                      vault={vault}
-                      isSelected={
-                        selectedVaultKey === `${vault.chainId}-${vault.address.toLowerCase()}`
-                      }
-                      onSelect={(nextVault) =>
-                        setSelectedVaultKey(
-                          `${nextVault.chainId}-${nextVault.address.toLowerCase()}`
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              )}
+              <VaultDetailPanel
+                key={
+                  selectedVault
+                    ? `${selectedVault.chainId}-${selectedVault.address.toLowerCase()}`
+                    : 'empty'
+                }
+                vault={selectedVault}
+                wallet={wallet}
+                walletChains={walletChains}
+                onDepositSuccess={handleDepositSuccess}
+                onOpenWalletModal={() => setIsWalletModalOpen(true)}
+              />
             </div>
-
-            <VaultDetailPanel
-              key={
-                selectedVault
-                  ? `${selectedVault.chainId}-${selectedVault.address.toLowerCase()}`
-                  : 'empty'
-              }
-              vault={selectedVault}
-            />
           </div>
         </div>
       </section>
@@ -287,15 +453,29 @@ function App() {
             <p className="eyebrow">Portfolio</p>
             <h2 className="section-title">Check positions after deposit.</h2>
             <p className="section-copy">
-              Paste a wallet address and confirm what the Earn portfolio endpoint sees.
+              Use the same wallet or any address to confirm what the Earn portfolio endpoint sees.
             </p>
           </div>
 
           <div className="mt-8">
-            <PortfolioLookup />
+            <PortfolioLookup
+              connectedAccount={wallet.account}
+              autoAddress={portfolioAutoAddress}
+              refreshToken={portfolioRefreshToken}
+            />
           </div>
         </div>
       </section>
+
+      <WalletModal
+        open={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        walletOptions={wallet.walletOptions}
+        isConnecting={wallet.isConnecting}
+        onSelect={handleWalletSelection}
+      />
+
+      <ToastNotice notice={wallet.notice} onClose={wallet.dismissNotice} />
     </div>
   );
 }
