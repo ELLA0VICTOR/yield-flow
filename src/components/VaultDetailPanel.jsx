@@ -131,6 +131,8 @@ export function VaultDetailPanel({
     formattedAmountOut: formattedWithdrawAmountOut,
     approve: approveWithdraw,
     withdraw,
+    usesProtocolNativeWithdraw,
+    supportsWithdrawFlow,
   } = useWithdrawFlow({
     vault,
     wallet,
@@ -153,9 +155,16 @@ export function VaultDetailPanel({
       { label: 'TVL', value: formatCurrency(vault.analytics?.tvl?.usd) },
       { label: '30d APY', value: formatPercent(vault.analytics?.apy30d) },
       { label: 'Time lock', value: formatTimelock(vault.timeLock) },
-      { label: 'Redeemable', value: vault.isRedeemable ? 'Yes' : 'No' },
+      {
+        label: 'Exit path',
+        value: usesProtocolNativeWithdraw
+          ? 'YO native'
+          : vault.isRedeemable
+            ? 'LI.FI'
+            : 'Deposit only',
+      },
     ];
-  }, [vault]);
+  }, [usesProtocolNativeWithdraw, vault]);
 
   useEffect(() => {
     if (!vault || !wallet.account || !onPositionProofChange) {
@@ -214,11 +223,13 @@ export function VaultDetailPanel({
     : 'Not prepared';
   const reviewReady = Boolean(quote) && isReviewConfirmed;
   const hasVaultShareBalance = vaultShareBalance.raw > 0n;
-  const withdrawRouteLabel = withdrawQuote
-    ? isWithdrawQuoteExpired
-      ? 'Expired'
-      : `${withdrawQuoteTimeRemaining}s left`
-    : 'Waiting for amount';
+  const withdrawRouteLabel = usesProtocolNativeWithdraw
+    ? 'YO native redeem'
+    : withdrawQuote
+      ? isWithdrawQuoteExpired
+        ? 'Expired'
+        : `${withdrawQuoteTimeRemaining}s left`
+      : 'Waiting for amount';
 
   async function handlePrimaryAction() {
     try {
@@ -534,23 +545,38 @@ export function VaultDetailPanel({
           </div>
         )}
 
-        {vault.isRedeemable && (
+        {supportsWithdrawFlow && (
           <div className="mt-5 grid gap-3 border-t-2 border-border pt-5">
             <div className="rounded-none border-2 border-border bg-card px-4 py-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[11px] font-head uppercase tracking-[0.18em] text-muted-foreground">
-                    Withdraw back to wallet
+                    {usesProtocolNativeWithdraw ? 'Withdraw via YO' : 'Withdraw back to wallet'}
                   </p>
                   <p className="mt-2 text-sm text-foreground">
-                    Redeem your vault shares back into {primaryToken?.symbol || 'the deposit token'}.
+                    {usesProtocolNativeWithdraw
+                      ? `Redeem your vault shares directly through YO back into ${primaryToken?.symbol || 'the deposit token'}.`
+                      : `Redeem your vault shares back into ${primaryToken?.symbol || 'the deposit token'}.`}
                   </p>
                 </div>
                 <span className="retro-badge">
-                  {withdrawStatusLabel || (hasVaultShareBalance ? 'Ready to redeem' : 'No shares yet')}
+                  {withdrawStatusLabel ||
+                    (hasVaultShareBalance
+                      ? usesProtocolNativeWithdraw
+                        ? 'YO native redeem'
+                        : 'Ready to redeem'
+                      : 'No shares yet')}
                 </span>
               </div>
             </div>
+
+            {usesProtocolNativeWithdraw && (
+              <div className="rounded-none border-2 border-border bg-accent px-4 py-3 text-sm text-foreground">
+                This vault exits through YO directly because LI.FI does not expose a Composer
+                redeem route for it yet. Small withdrawals may settle quickly. Larger requests can
+                take up to 24 hours if vault liquidity is limited.
+              </div>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="retro-metric">
@@ -560,7 +586,7 @@ export function VaultDetailPanel({
                 </span>
               </div>
               <div className="retro-metric">
-                <span className="metric-label">Redeem route</span>
+                <span className="metric-label">Exit path</span>
                 <span className="metric-value">{withdrawRouteLabel}</span>
               </div>
             </div>
@@ -603,7 +629,7 @@ export function VaultDetailPanel({
               </div>
             )}
 
-            {!hasSufficientWithdrawBalance && withdrawQuote && (
+            {!hasSufficientWithdrawBalance && (withdrawQuote || usesProtocolNativeWithdraw) && (
               <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
                 Not enough vault shares for this withdrawal amount.
               </div>
@@ -616,13 +642,13 @@ export function VaultDetailPanel({
               </div>
             )}
 
-            {isWithdrawQuoteExpired && (
+            {!usesProtocolNativeWithdraw && isWithdrawQuoteExpired && (
               <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
                 Withdrawal route expired. Enter the amount again or wait for it to refresh.
               </div>
             )}
 
-            {withdrawQuote && (
+            {(withdrawQuote || usesProtocolNativeWithdraw) && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="retro-metric">
                   <span className="metric-label">Estimated return</span>
@@ -631,9 +657,15 @@ export function VaultDetailPanel({
                   </span>
                 </div>
                 <div className="retro-metric">
-                  <span className="metric-label">Execute on</span>
+                  <span className="metric-label">
+                    {usesProtocolNativeWithdraw ? 'YO vault' : 'Execute on'}
+                  </span>
                   <span className="metric-value font-mono text-xs">
-                    {truncateAddress(withdrawQuoteTargets.transactionTarget || 'Unavailable', 10, 6)}
+                    {truncateAddress(
+                      withdrawQuoteTargets.transactionTarget || vault.address || 'Unavailable',
+                      10,
+                      6
+                    )}
                   </span>
                 </div>
               </div>
@@ -645,22 +677,26 @@ export function VaultDetailPanel({
               onClick={handleWithdrawAction}
               disabled={
                 !withdrawAmount ||
-                !withdrawQuote ||
                 isWithdrawQuoteLoading ||
                 isWithdrawApprovalPending ||
                 isWithdrawPending ||
-                isWithdrawQuoteExpired ||
+                (!usesProtocolNativeWithdraw && !withdrawQuote) ||
+                (!usesProtocolNativeWithdraw && isWithdrawQuoteExpired) ||
                 isWithdrawQuoteStale ||
                 (!needsWithdrawApproval && !canWithdraw)
               }
             >
-              {needsWithdrawApproval
-                ? isWithdrawApprovalPending
-                  ? 'Approving Shares...'
-                  : 'Approve Shares'
-                : isWithdrawPending
-                  ? 'Withdrawing...'
-                  : 'Withdraw to Wallet'}
+              {usesProtocolNativeWithdraw
+                ? isWithdrawPending
+                  ? 'Redeeming via YO...'
+                  : 'Redeem via YO'
+                : needsWithdrawApproval
+                  ? isWithdrawApprovalPending
+                    ? 'Approving Shares...'
+                    : 'Approve Shares'
+                  : isWithdrawPending
+                    ? 'Withdrawing...'
+                    : 'Withdraw to Wallet'}
             </button>
 
             {(withdrawApprovalHash || withdrawHash) && (

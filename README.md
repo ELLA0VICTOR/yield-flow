@@ -22,7 +22,7 @@ YieldFlow focuses on a simple end-to-end user flow:
 6. Verify the resulting position
 7. Withdraw back to wallet from redeemable vaults
 
-The goal is not to build DeFi infrastructure from scratch. The goal is to build a clean, trustworthy product layer on top of LI.FI’s infrastructure.
+The goal is not to build DeFi infrastructure from scratch. The goal is to build a clean, trustworthy product layer on top of LI.FI's infrastructure.
 
 ## Why This Project Exists
 
@@ -84,7 +84,7 @@ Current UX includes:
 
 ### 4. Automatic Route Preparation
 
-LI.FI Composer quotes are still required under the hood, but YieldFlow no longer makes users think about “preparing a quote” as a separate mental step.
+LI.FI Composer quotes are still required under the hood, but YieldFlow no longer makes users think about "preparing a quote" as a separate mental step.
 
 Once the user enters an amount on the correct chain:
 
@@ -96,7 +96,7 @@ Once the user enters an amount on the correct chain:
 
 YieldFlow first checks the official LI.FI portfolio endpoint.
 
-If the LI.FI portfolio index has not caught up yet, YieldFlow can still surface a fallback position using the on-chain vault share balance already received by the wallet. That fallback is stored locally and shown inside the portfolio section so the user still sees a coherent “position” experience.
+If the LI.FI portfolio index has not caught up yet, YieldFlow can still surface a fallback position using the on-chain vault share balance already received by the wallet. That fallback is stored locally and shown inside the portfolio section so the user still sees a coherent "position" experience.
 
 ### 6. Withdraw Flow
 
@@ -190,6 +190,71 @@ Important note:
 
 Vault execution risk still comes from LI.FI routing and the underlying vault protocols. YieldFlow reduces UX mistakes and unsafe defaults, but it does not remove normal DeFi protocol risk.
 
+## Repo Structure
+
+```text
+yield-flow/
+|-- api/
+|   |-- _utils/
+|   |   `-- lifiProxy.js            # shared server-side LI.FI proxy helper
+|   |-- earn/
+|   |   |-- chains.js               # Vercel endpoint for Earn chains
+|   |   |-- portfolio.js            # Vercel endpoint for Earn portfolio lookups
+|   |   |-- protocols.js            # Vercel endpoint for Earn protocols
+|   |   |-- vaults.js               # Vercel endpoint for Earn vaults
+|   |   `-- [...path].js            # local/dev catch-all proxy path
+|   `-- quest/
+|       |-- chains.js               # Vercel endpoint for LI.FI chain metadata
+|       |-- quote.js                # Vercel endpoint for Composer quote requests
+|       |-- status.js               # Vercel endpoint for Composer status checks
+|       `-- [...path].js            # local/dev catch-all proxy path
+|-- public/
+|   |-- favicon.svg                 # custom retro YieldFlow favicon
+|   `-- icons.svg                   # app icon sprite
+|-- src/
+|   |-- assets/
+|   |   `-- hero.png                # static visual asset
+|   |-- components/
+|   |   |-- FilterBar.jsx           # explorer filters and scan controls
+|   |   |-- PortfolioLookup.jsx     # LI.FI portfolio + fallback position UI
+|   |   |-- ToastNotice.jsx         # transient wallet / action notices
+|   |   |-- VaultCard.jsx           # vault grid cards
+|   |   |-- VaultDetailPanel.jsx    # deposit and withdraw studio
+|   |   `-- WalletModal.jsx         # wallet picker modal
+|   |-- hooks/
+|   |   |-- useComposerQuote.js     # quote request state management
+|   |   |-- useDepositFlow.js       # deposit route, approval, execution logic
+|   |   |-- usePortfolioLookup.js   # portfolio lookup state
+|   |   |-- useVaultExplorer.js     # reference data + vault loading
+|   |   |-- useWallet.js            # injected wallet discovery and connection
+|   |   `-- useWithdrawFlow.js      # withdraw route, approval, execution logic
+|   |-- lib/
+|   |   |-- constants.js            # content, nav, footer, and filter defaults
+|   |   |-- errors.js               # friendly wallet / transaction error mapping
+|   |   |-- evm.js                  # wallet provider and token helper functions
+|   |   |-- formatters.js           # UI formatting helpers
+|   |   |-- lifi.js                 # frontend calls to the proxy endpoints
+|   |   `-- positions.js            # fallback position shaping and local storage
+|   |-- App.jsx                     # main page layout and app-level flow
+|   |-- index.css                   # retro design system and layout styles
+|   `-- main.jsx                    # React entry point
+|-- .env.example                    # environment variable template
+|-- eslint.config.js                # lint configuration
+|-- index.html                      # Vite HTML entry and favicon wiring
+|-- package.json                    # scripts and dependencies
+|-- postcss.config.js               # PostCSS config
+|-- tailwind.config.js              # Tailwind v3 config
+|-- vercel.json                     # production rewrites for LI.FI proxy endpoints
+`-- vite.config.js                  # Vite config and local dev proxy
+```
+
+## Architecture by Layer
+
+- `UI layer`: [src/App.jsx](./src/App.jsx) plus the components in [src/components](./src/components)
+- `State and workflow layer`: the hooks in [src/hooks](./src/hooks)
+- `Integration layer`: helpers in [src/lib/lifi.js](./src/lib/lifi.js), [src/lib/evm.js](./src/lib/evm.js), and [src/lib/positions.js](./src/lib/positions.js)
+- `Server proxy layer`: the Vercel functions in [api](./api)
+
 ## Environment Setup
 
 Create a local environment file:
@@ -267,7 +332,7 @@ Why:
 
 ## Known Product Reality
 
-During testing, LI.FI’s portfolio endpoint may not immediately reflect some newly created positions for certain protocol/chain combinations. YieldFlow includes a local fallback position mechanism so the user can still verify receipt when the official portfolio index is delayed.
+During testing, LI.FI's portfolio endpoint may not immediately reflect some newly created positions for certain protocol/chain combinations. YieldFlow includes a local fallback position mechanism so the user can still verify receipt when the official portfolio index is delayed.
 
 This is a product workaround, not a replacement for the official LI.FI portfolio endpoint.
 
@@ -300,7 +365,7 @@ Current MVP status:
 
 This means the core app is already in a real demo-ready state.
 
-## What’s Next
+## What's Next
 
 The main product build is not the blocker anymore. The biggest remaining work is submission quality:
 
@@ -330,4 +395,4 @@ YieldFlow is no longer just a mock explorer. It is now a working LI.FI Earn prod
 - portfolio verification
 - fallback proof for indexing delays
 
-At this point, the project is in the “ship and polish” phase, not the “core build is missing” phase.
+At this point, the project is in the "ship and polish" phase, not the "core build is missing" phase.

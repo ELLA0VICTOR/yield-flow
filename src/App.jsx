@@ -18,6 +18,7 @@ import {
   removeStoredFallbackPosition,
   upsertStoredFallbackPosition,
 } from './lib/positions';
+import { getVaultExitLabel } from './lib/protocols';
 
 function App() {
   const pageSize = 18;
@@ -496,11 +497,7 @@ function App() {
                 <div className="retro-metric">
                   <span className="metric-label">Exit path</span>
                   <span className="metric-value">
-                    {selectedVault
-                      ? selectedVault.isRedeemable
-                        ? 'Redeemable: Yes'
-                        : 'Redeemable: No'
-                      : 'Select a vault'}
+                    {selectedVault ? getVaultExitLabel(selectedVault) : 'Select a vault'}
                   </span>
                 </div>
               </div>

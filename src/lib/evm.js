@@ -6,6 +6,11 @@ const ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
 ];
 
+const ERC4626_ABI = [
+  'function previewRedeem(uint256 shares) view returns (uint256)',
+  'function redeem(uint256 shares, address receiver, address owner) returns (uint256)',
+];
+
 const WALLET_BRANDS = {
   metamask: { name: 'MetaMask', shortLabel: 'MM' },
   rabby: { name: 'Rabby', shortLabel: 'RB' },
@@ -199,4 +204,18 @@ export async function getTokenAllowance({ tokenAddress, owner, spender, provider
 export async function approveToken({ tokenAddress, spender, amount, signer }) {
   const contract = new Contract(tokenAddress, ERC20_ABI, signer);
   return contract.approve(spender, amount);
+}
+
+export async function previewVaultRedeem({ vaultAddress, shares, provider }) {
+  if (!provider || !vaultAddress || !shares) {
+    return 0n;
+  }
+
+  const contract = new Contract(vaultAddress, ERC4626_ABI, provider);
+  return contract.previewRedeem(shares);
+}
+
+export async function redeemVaultShares({ vaultAddress, shares, receiver, owner, signer }) {
+  const contract = new Contract(vaultAddress, ERC4626_ABI, signer);
+  return contract.redeem(shares, receiver, owner);
 }

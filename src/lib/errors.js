@@ -50,6 +50,7 @@ export function getFriendlyTransactionMessage(error, action = 'request') {
     const byAction = {
       approve: 'Approval canceled.',
       deposit: 'Deposit canceled.',
+      withdraw: 'Withdraw canceled.',
       quote: 'Quote request canceled.',
       request: 'Request canceled.',
     };
@@ -85,6 +86,13 @@ export function getFriendlyTransactionMessage(error, action = 'request') {
     return {
       tone: 'error',
       message: 'Deposit failed. Please review the quote, amount, and network.',
+    };
+  }
+
+  if (action === 'withdraw') {
+    return {
+      tone: 'error',
+      message: 'Withdraw failed. Please review the amount, network, and exit path.',
     };
   }
 

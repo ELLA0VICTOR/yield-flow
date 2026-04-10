@@ -4,6 +4,8 @@ import {
   approveToken,
   getTokenAllowance,
   isWalletAddress,
+  previewVaultRedeem,
+  redeemVaultShares,
 } from '../lib/evm';
 import { getFriendlyTransactionMessage } from '../lib/errors';
 import { parseAmountToUnits } from '../lib/formatters';
@@ -21,6 +23,11 @@ function normalizeAddress(value = '') {
 
 function isHexPayload(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 10;
+}
+
+function isYoProtocolVault(vault) {
+  const protocolName = String(vault?.protocol?.name || '').trim().toLowerCase();
+  return protocolName === 'yo-protocol' || protocolName === 'yo protocol' || protocolName.startsWith('yo');
 }
 
 function validateWithdrawQuote({
@@ -113,8 +120,8 @@ export function useWithdrawFlow({
 }) {
   const {
     quote,
-    isLoading: isQuoteLoading,
-    error: quoteError,
+    isLoading: isComposerQuoteLoading,
+    error: composerQuoteError,
     requestQuote,
     resetQuote,
   } = useComposerQuote();
@@ -135,8 +142,14 @@ export function useWithdrawFlow({
     transactionTarget: '',
     transactionValue: '0',
   });
+  const [nativeEstimate, setNativeEstimate] = useState(null);
+  const [isNativeEstimateLoading, setIsNativeEstimateLoading] = useState(false);
 
   const primaryToken = vault?.underlyingTokens?.[0];
+  const usesProtocolNativeWithdraw = useMemo(
+    () => isYoProtocolVault(vault) && !vault?.isRedeemable,
+    [vault]
+  );
   const shareToken = useMemo(
     () => ({
       address: vault?.address || '',
@@ -154,9 +167,20 @@ export function useWithdrawFlow({
     }),
     [shareBalance?.formatted, shareBalance?.raw, shareToken.decimals, shareToken.symbol]
   );
+  const enteredAmountUnits = useMemo(() => {
+    if (!amount) {
+      return null;
+    }
+
+    try {
+      return BigInt(parseAmountToUnits(amount, shareToken.decimals));
+    } catch {
+      return null;
+    }
+  }, [amount, shareToken.decimals]);
 
   useEffect(() => {
-    if (!quoteExpiresAt) {
+    if (!quoteExpiresAt || usesProtocolNativeWithdraw) {
       setQuoteTimeRemaining(0);
       return undefined;
     }
@@ -170,9 +194,10 @@ export function useWithdrawFlow({
     const intervalId = window.setInterval(updateRemainingTime, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [quoteExpiresAt]);
+  }, [quoteExpiresAt, usesProtocolNativeWithdraw]);
 
-  const isQuoteExpired = Boolean(quote?.transactionRequest) && quoteTimeRemaining === 0;
+  const isQuoteExpired =
+    !usesProtocolNativeWithdraw && Boolean(quote?.transactionRequest) && quoteTimeRemaining === 0;
 
   const resetFlow = useCallback(() => {
     resetQuote();
@@ -193,6 +218,8 @@ export function useWithdrawFlow({
       transactionTarget: '',
       transactionValue: '0',
     });
+    setNativeEstimate(null);
+    setIsNativeEstimateLoading(false);
   }, [resetQuote]);
 
   useEffect(() => {
@@ -201,6 +228,11 @@ export function useWithdrawFlow({
 
   const refreshShareBalanceAndAllowance = useCallback(
     async (activeQuote, amountUnits) => {
+      if (usesProtocolNativeWithdraw) {
+        setNeedsApproval(false);
+        return;
+      }
+
       if (!wallet.provider || !wallet.account || !shareToken.address) {
         return;
       }
@@ -213,10 +245,10 @@ export function useWithdrawFlow({
       });
       setNeedsApproval(nextAllowance < BigInt(amountUnits || activeQuote.action?.fromAmount || 0));
     },
-    [shareToken.address, wallet.account, wallet.provider]
+    [shareToken.address, usesProtocolNativeWithdraw, wallet.account, wallet.provider]
   );
 
-  const prepareQuote = useCallback(async () => {
+  const prepareLifiQuote = useCallback(async () => {
     if (!vault?.address || !primaryToken?.address) {
       throw new Error('Select a redeemable vault first');
     }
@@ -232,6 +264,7 @@ export function useWithdrawFlow({
     setStatusLabel('Preparing route...');
     setApprovalHash('');
     setWithdrawHash('');
+    setNativeEstimate(null);
 
     try {
       const nextQuote = await requestQuote({
@@ -277,8 +310,71 @@ export function useWithdrawFlow({
     wallet.isConnected,
   ]);
 
+  const prepareYoEstimate = useCallback(async () => {
+    if (!vault?.address || !primaryToken?.decimals) {
+      throw new Error('Select a YO vault with a valid asset first');
+    }
+
+    if (!wallet.isConnected || !wallet.account || !wallet.provider) {
+      throw new Error('Connect your wallet to prepare a withdrawal');
+    }
+
+    const amountUnits = parseAmountToUnits(amount, shareToken.decimals);
+
+    setError('');
+    setSuccessMessage('');
+    setStatusLabel('Estimating YO redeem...');
+    setApprovalHash('');
+    setWithdrawHash('');
+    setNeedsApproval(false);
+    setIsNativeEstimateLoading(true);
+
+    try {
+      const assetsOut = await previewVaultRedeem({
+        vaultAddress: vault.address,
+        shares: amountUnits,
+        provider: wallet.provider,
+      });
+
+      setNativeEstimate(assetsOut);
+      setQuotedAmount(amount);
+      setQuoteTargets({
+        approvalTarget: '',
+        transactionTarget: vault.address,
+        transactionValue: '0',
+      });
+      setStatusLabel('YO redeem ready');
+      return assetsOut;
+    } catch (estimateError) {
+      const message = getFriendlyTransactionMessage(estimateError, 'quote').message;
+      setError(message);
+      setStatusLabel('');
+      throw new Error(message);
+    } finally {
+      setIsNativeEstimateLoading(false);
+    }
+  }, [
+    amount,
+    primaryToken?.decimals,
+    shareToken.decimals,
+    vault?.address,
+    wallet.account,
+    wallet.isConnected,
+    wallet.provider,
+  ]);
+
+  const prepareQuote = useCallback(async () => {
+    if (usesProtocolNativeWithdraw) {
+      return prepareYoEstimate();
+    }
+
+    return prepareLifiQuote();
+  }, [prepareLifiQuote, prepareYoEstimate, usesProtocolNativeWithdraw]);
+
   useEffect(() => {
-    if (!vault?.isRedeemable || !wallet.isConnected || !wallet.account || !amount) {
+    const supportsWithdrawFlow = vault?.isRedeemable || usesProtocolNativeWithdraw;
+
+    if (!supportsWithdrawFlow || !wallet.isConnected || !wallet.account || !amount) {
       return;
     }
 
@@ -286,17 +382,19 @@ export function useWithdrawFlow({
       return;
     }
 
-    if (isApprovalPending || isWithdrawPending || isQuoteLoading) {
+    if (isApprovalPending || isWithdrawPending || isComposerQuoteLoading || isNativeEstimateLoading) {
       return;
     }
 
-    try {
-      parseAmountToUnits(amount, shareToken.decimals);
-    } catch {
+    if (enteredAmountUnits === null) {
       return;
     }
 
-    if (quote?.transactionRequest && quotedAmount === amount && !isQuoteExpired) {
+    if (usesProtocolNativeWithdraw) {
+      if (quotedAmount === amount && nativeEstimate !== null) {
+        return;
+      }
+    } else if (quote?.transactionRequest && quotedAmount === amount && !isQuoteExpired) {
       return;
     }
 
@@ -307,14 +405,17 @@ export function useWithdrawFlow({
     return () => window.clearTimeout(timeoutId);
   }, [
     amount,
+    enteredAmountUnits,
     isApprovalPending,
+    isComposerQuoteLoading,
+    isNativeEstimateLoading,
     isQuoteExpired,
-    isQuoteLoading,
     isWithdrawPending,
+    nativeEstimate,
     prepareQuote,
     quote,
     quotedAmount,
-    shareToken.decimals,
+    usesProtocolNativeWithdraw,
     vault?.chainId,
     vault?.isRedeemable,
     wallet.account,
@@ -323,7 +424,7 @@ export function useWithdrawFlow({
   ]);
 
   const approve = useCallback(async () => {
-    if (!quote || !vault?.address) {
+    if (usesProtocolNativeWithdraw || !quote || !vault?.address) {
       return;
     }
 
@@ -371,21 +472,61 @@ export function useWithdrawFlow({
     quotedAmount,
     refreshShareBalanceAndAllowance,
     shareToken.decimals,
+    usesProtocolNativeWithdraw,
     vault,
     wallet,
   ]);
 
   const withdraw = useCallback(async () => {
-    if (!quote?.transactionRequest) {
-      throw new Error('Prepare a route before withdrawing');
-    }
-
     setError('');
     setSuccessMessage('');
     setIsWithdrawPending(true);
-    setStatusLabel('Confirming withdrawal...');
 
     try {
+      if (usesProtocolNativeWithdraw) {
+        if (!vault?.address || !wallet.account) {
+          throw new Error('Connect your wallet before withdrawing.');
+        }
+
+        const shares = parseAmountToUnits(quotedAmount || amount, shareToken.decimals);
+        setStatusLabel('Confirming YO redeem...');
+
+        const signer = await wallet.getSigner();
+        const redeemTx = await redeemVaultShares({
+          vaultAddress: vault.address,
+          shares,
+          receiver: wallet.account,
+          owner: wallet.account,
+          signer,
+        });
+
+        setWithdrawHash(redeemTx.hash);
+        setStatusLabel('Waiting for confirmation...');
+        await redeemTx.wait();
+
+        const nextShareBalance = await refreshVaultShareBalance();
+        onWithdrawSuccess?.(
+          wallet.account,
+          buildFallbackVaultPosition({
+            vault,
+            walletAddress: wallet.account,
+            shareBalance: nextShareBalance,
+          })
+        );
+
+        setStatusLabel('YO redeem submitted');
+        setSuccessMessage(
+          'YO redeem submitted. Small withdrawals may settle quickly. Larger withdrawals can take up to 24 hours if vault liquidity is limited.'
+        );
+        return;
+      }
+
+      if (!quote?.transactionRequest) {
+        throw new Error('Prepare a route before withdrawing');
+      }
+
+      setStatusLabel('Confirming withdrawal...');
+
       const expectedAmountUnits = parseAmountToUnits(quotedAmount || amount, shareToken.decimals);
 
       validateWithdrawQuote({
@@ -453,7 +594,7 @@ export function useWithdrawFlow({
         await new Promise((resolve) => window.setTimeout(resolve, STATUS_POLL_INTERVAL));
       }
     } catch (withdrawError) {
-      setError(getFriendlyTransactionMessage(withdrawError, 'deposit').message);
+      setError(getFriendlyTransactionMessage(withdrawError, 'withdraw').message);
       setStatusLabel('');
       throw withdrawError;
     } finally {
@@ -469,23 +610,37 @@ export function useWithdrawFlow({
     refreshShareBalanceAndAllowance,
     refreshVaultShareBalance,
     shareToken.decimals,
+    usesProtocolNativeWithdraw,
     vault,
     wallet,
   ]);
 
-  const hasSufficientBalance = availableShareBalance.raw >= BigInt(quote?.action?.fromAmount || 0);
-  const isQuoteStale = Boolean(quote?.transactionRequest) && quotedAmount !== amount;
-  const canWithdraw =
-    Boolean(quote?.transactionRequest) &&
-    quotedAmount === amount &&
-    !needsApproval &&
-    !isApprovalPending &&
-    !isWithdrawPending &&
-    !isQuoteExpired &&
-    hasSufficientBalance;
+  const isQuoteLoading = isComposerQuoteLoading || isNativeEstimateLoading;
+  const hasSufficientBalance = usesProtocolNativeWithdraw
+    ? enteredAmountUnits === null || availableShareBalance.raw >= enteredAmountUnits
+    : availableShareBalance.raw >= BigInt(quote?.action?.fromAmount || 0);
+  const isQuoteStale = usesProtocolNativeWithdraw
+    ? nativeEstimate !== null && quotedAmount !== amount
+    : Boolean(quote?.transactionRequest) && quotedAmount !== amount;
+  const canWithdraw = usesProtocolNativeWithdraw
+    ? nativeEstimate !== null &&
+      quotedAmount === amount &&
+      !isWithdrawPending &&
+      !isQuoteLoading &&
+      hasSufficientBalance
+    : Boolean(quote?.transactionRequest) &&
+      quotedAmount === amount &&
+      !needsApproval &&
+      !isApprovalPending &&
+      !isWithdrawPending &&
+      !isQuoteExpired &&
+      hasSufficientBalance;
 
-  const formattedAmountOut =
-    quote?.estimate?.toAmount && quote?.estimate?.toToken?.decimals !== undefined
+  const formattedAmountOut = usesProtocolNativeWithdraw
+    ? nativeEstimate !== null
+      ? formatUnits(nativeEstimate, primaryToken?.decimals || 18)
+      : null
+    : quote?.estimate?.toAmount && quote?.estimate?.toToken?.decimals !== undefined
       ? formatUnits(quote.estimate.toAmount, quote.estimate.toToken.decimals)
       : null;
 
@@ -493,7 +648,7 @@ export function useWithdrawFlow({
     amount,
     setAmount,
     quote,
-    quoteError,
+    quoteError: composerQuoteError,
     isQuoteLoading,
     needsApproval,
     isApprovalPending,
@@ -517,5 +672,7 @@ export function useWithdrawFlow({
     approve,
     withdraw,
     resetFlow,
+    usesProtocolNativeWithdraw,
+    supportsWithdrawFlow: Boolean(vault?.isRedeemable || usesProtocolNativeWithdraw),
   };
 }

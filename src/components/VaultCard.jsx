@@ -4,11 +4,14 @@ import {
   formatPercent,
   formatRelativeTime,
 } from '../lib/formatters';
+import { getVaultExitLabel, hasProtocolNativeExit } from '../lib/protocols';
 
 export function VaultCard({ vault, isSelected, onSelect }) {
   const totalApy = vault.analytics?.apy?.total;
   const averageApy = vault.analytics?.apy30d;
   const primaryAsset = vault.underlyingTokens?.[0]?.symbol || 'Unknown asset';
+  const exitLabel = getVaultExitLabel(vault);
+  const usesProtocolExit = hasProtocolNativeExit(vault);
 
   return (
     <button
@@ -27,9 +30,7 @@ export function VaultCard({ vault, isSelected, onSelect }) {
             <span className={`retro-badge ${vault.isTransactional ? 'retro-badge-success' : ''}`}>
               {vault.isTransactional ? 'Deposit ready' : 'Data only'}
             </span>
-            <span className="retro-badge">
-              {vault.isRedeemable ? 'Redeemable: Yes' : 'Redeemable: No'}
-            </span>
+            <span className={`retro-badge ${usesProtocolExit ? 'bg-accent' : ''}`}>{exitLabel}</span>
             {isSelected && <span className="retro-badge">Pinned</span>}
           </div>
 
