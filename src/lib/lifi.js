@@ -1,18 +1,43 @@
 const EARN_PROXY_BASE = '/api/earn';
 const QUEST_PROXY_BASE = '/api/quest';
 
-async function requestJson(url) {
+function getApiErrorMessage({ status, payload, context }) {
+  const message = String(payload?.message || '').toLowerCase();
+
+  if (message.includes('invalid ethereum address')) {
+    return 'Enter a valid wallet address to load positions.';
+  }
+
+  if (status === 429) {
+    return 'LI.FI is rate limiting requests right now. Please try again shortly.';
+  }
+
+  if (status === 404 || status === 403 || message.includes('path not allowed')) {
+    const byContext = {
+      reference: 'YieldFlow could not load LI.FI reference data right now.',
+      vaults: 'YieldFlow could not load vaults right now.',
+      portfolio: 'YieldFlow could not load portfolio positions right now.',
+      quote: 'YieldFlow could not prepare a route right now.',
+      status: 'YieldFlow could not check the transaction status right now.',
+    };
+
+    return byContext[context] || 'YieldFlow could not reach LI.FI right now.';
+  }
+
+  return payload?.message || 'YieldFlow could not complete this request right now.';
+}
+
+async function requestJson(url, context = 'reference') {
   const response = await fetch(url);
   const contentType = response.headers.get('content-type') || '';
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const message = payload?.message || `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new Error(getApiErrorMessage({ status: response.status, payload, context }));
   }
 
   if (payload === null || (!contentType.includes('application/json') && typeof payload !== 'object')) {
-    throw new Error('Unexpected response from LI.FI proxy');
+    throw new Error('Unexpected response from LI.FI.');
   }
 
   return payload;
@@ -40,29 +65,29 @@ export async function fetchVaults(filters) {
     params.set('cursor', filters.cursor);
   }
 
-  return requestJson(`${EARN_PROXY_BASE}/v1/earn/vaults?${params.toString()}`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/vaults?${params.toString()}`, 'vaults');
 }
 
 export async function fetchChains() {
-  return requestJson(`${EARN_PROXY_BASE}/v1/earn/chains`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/chains`, 'reference');
 }
 
 export async function fetchWalletChains() {
-  const result = await requestJson(`${QUEST_PROXY_BASE}/v1/chains?chainTypes=EVM`);
+  const result = await requestJson(`${QUEST_PROXY_BASE}/v1/chains?chainTypes=EVM`, 'reference');
   return result.chains || [];
 }
 
 export async function fetchProtocols() {
-  return requestJson(`${EARN_PROXY_BASE}/v1/earn/protocols`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/protocols`, 'reference');
 }
 
 export async function fetchPortfolioPositions(address) {
-  return requestJson(`${EARN_PROXY_BASE}/v1/earn/portfolio/${address}/positions`);
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/portfolio/${address}/positions`, 'portfolio');
 }
 
 export async function fetchComposerQuote(params) {
   const query = new URLSearchParams(params);
-  return requestJson(`${QUEST_PROXY_BASE}/v1/quote?${query.toString()}`);
+  return requestJson(`${QUEST_PROXY_BASE}/v1/quote?${query.toString()}`, 'quote');
 }
 
 export async function fetchComposerStatus({ txHash, fromChain, toChain }) {
@@ -72,5 +97,5 @@ export async function fetchComposerStatus({ txHash, fromChain, toChain }) {
     toChain: String(toChain),
   });
 
-  return requestJson(`${QUEST_PROXY_BASE}/v1/status?${query.toString()}`);
+  return requestJson(`${QUEST_PROXY_BASE}/v1/status?${query.toString()}`, 'status');
 }

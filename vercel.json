@@ -1,0 +1,32 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/earn/v1/earn/chains",
+      "destination": "/api/earn/chains"
+    },
+    {
+      "source": "/api/earn/v1/earn/protocols",
+      "destination": "/api/earn/protocols"
+    },
+    {
+      "source": "/api/earn/v1/earn/vaults",
+      "destination": "/api/earn/vaults"
+    },
+    {
+      "source": "/api/earn/v1/earn/portfolio/:address/positions",
+      "destination": "/api/earn/portfolio?address=:address"
+    },
+    {
+      "source": "/api/quest/v1/chains",
+      "destination": "/api/quest/chains"
+    },
+    {
+      "source": "/api/quest/v1/quote",
+      "destination": "/api/quest/quote"
+    },
+    {
+      "source": "/api/quest/v1/status",
+      "destination": "/api/quest/status"
+    }
+  ]
+}

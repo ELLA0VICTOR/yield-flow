@@ -49,18 +49,22 @@ export async function proxyLifiRequest(req, res, upstreamBase, options = {}) {
   const {
     allowedMethods = ['GET'],
     allowedPathPatterns = [],
+    upstreamPath = '',
+    mapQuery = null,
   } = options
 
   try {
     assertAllowedMethod(req.method, allowedMethods)
 
-    const pathSegments = resolvePathSegments(req.query.path)
-    const normalizedPath = pathSegments.join('/')
-    assertAllowedPath(normalizedPath, allowedPathPatterns)
+    const normalizedPath = upstreamPath || resolvePathSegments(req.query.path).join('/')
+
+    if (allowedPathPatterns.length > 0) {
+      assertAllowedPath(normalizedPath, allowedPathPatterns)
+    }
 
     const normalizedBase = upstreamBase.endsWith('/') ? upstreamBase : `${upstreamBase}/`
     const upstreamUrl = new URL(normalizedPath, normalizedBase)
-    appendSearchParams(upstreamUrl, req.query)
+    appendSearchParams(upstreamUrl, mapQuery ? mapQuery(req.query) : req.query)
 
     const headers = {}
 
