@@ -1,11 +1,9 @@
 import { formatUnits } from 'ethers';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  getTokenAllowance,
-  getTokenBalance,
-  isNativeToken,
-  isWalletAddress,
   approveToken,
+  getTokenAllowance,
+  isWalletAddress,
 } from '../lib/evm';
 import { getFriendlyTransactionMessage } from '../lib/errors';
 import { parseAmountToUnits } from '../lib/formatters';
@@ -25,7 +23,7 @@ function isHexPayload(value) {
   return typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 10;
 }
 
-function validatePreparedQuote({
+function validateWithdrawQuote({
   quote,
   vault,
   primaryToken,
@@ -34,7 +32,7 @@ function validatePreparedQuote({
   quoteExpiresAt,
 }) {
   if (!quote?.transactionRequest || !quote?.action) {
-    throw new Error('Prepare a quote before continuing.');
+    throw new Error('Prepare a route before continuing.');
   }
 
   if (!vault?.address || !primaryToken?.address) {
@@ -46,41 +44,41 @@ function validatePreparedQuote({
   }
 
   if (!quoteExpiresAt || Date.now() > quoteExpiresAt) {
-    throw new Error('Quote expired. Prepare a new quote.');
+    throw new Error('Route expired. Refresh before withdrawing.');
   }
 
   const action = quote.action;
   const transactionRequest = quote.transactionRequest;
   const expectedChainId = Number(vault.chainId);
   const normalizedWallet = normalizeAddress(walletAddress);
-  const normalizedToken = normalizeAddress(primaryToken.address);
   const normalizedVault = normalizeAddress(vault.address);
+  const normalizedPrimaryToken = normalizeAddress(primaryToken.address);
 
   if (
     Number(action.fromChainId) !== expectedChainId ||
     Number(action.toChainId) !== expectedChainId
   ) {
-    throw new Error('Quote network does not match the selected vault.');
+    throw new Error('Route network does not match the selected vault.');
   }
 
-  if (normalizeAddress(action.fromToken?.address) !== normalizedToken) {
-    throw new Error('Quote token does not match the selected deposit token.');
+  if (normalizeAddress(action.fromToken?.address) !== normalizedVault) {
+    throw new Error('Route source does not match the selected vault token.');
   }
 
-  if (action.toToken?.address && normalizeAddress(action.toToken.address) !== normalizedVault) {
-    throw new Error('Quote destination does not match the selected vault.');
+  if (action.toToken?.address && normalizeAddress(action.toToken.address) !== normalizedPrimaryToken) {
+    throw new Error('Route destination does not match the selected asset.');
   }
 
   if (action.fromAddress && normalizeAddress(action.fromAddress) !== normalizedWallet) {
-    throw new Error('Quote sender does not match the connected wallet.');
+    throw new Error('Route sender does not match the connected wallet.');
   }
 
   if (action.toAddress && normalizeAddress(action.toAddress) !== normalizedWallet) {
-    throw new Error('Quote receiver does not match the connected wallet.');
+    throw new Error('Route receiver does not match the connected wallet.');
   }
 
   if (BigInt(action.fromAmount || 0) !== BigInt(expectedAmountUnits || 0)) {
-    throw new Error('Quote amount no longer matches the entered amount.');
+    throw new Error('Route amount no longer matches the entered amount.');
   }
 
   if (transactionRequest.from && normalizeAddress(transactionRequest.from) !== normalizedWallet) {
@@ -95,7 +93,7 @@ function validatePreparedQuote({
     throw new Error('Transaction data is invalid.');
   }
 
-  if (!isNativeToken(primaryToken.address) && !isWalletAddress(quote.estimate?.approvalAddress)) {
+  if (!isWalletAddress(quote.estimate?.approvalAddress)) {
     throw new Error('Approval target is invalid.');
   }
 
@@ -106,7 +104,13 @@ function validatePreparedQuote({
   };
 }
 
-export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
+export function useWithdrawFlow({
+  vault,
+  wallet,
+  shareBalance,
+  refreshVaultShareBalance,
+  onWithdrawSuccess,
+}) {
   const {
     quote,
     isLoading: isQuoteLoading,
@@ -115,13 +119,11 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     resetQuote,
   } = useComposerQuote();
   const [amount, setAmount] = useState('');
-  const [balance, setBalance] = useState({ raw: 0n, formatted: '0' });
-  const [isBalanceLoading, setIsBalanceLoading] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [isApprovalPending, setIsApprovalPending] = useState(false);
-  const [isDepositPending, setIsDepositPending] = useState(false);
+  const [isWithdrawPending, setIsWithdrawPending] = useState(false);
   const [approvalHash, setApprovalHash] = useState('');
-  const [depositHash, setDepositHash] = useState('');
+  const [withdrawHash, setWithdrawHash] = useState('');
   const [statusLabel, setStatusLabel] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -133,16 +135,25 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     transactionTarget: '',
     transactionValue: '0',
   });
-  const [vaultShareBalance, setVaultShareBalance] = useState({
-    raw: 0n,
-    formatted: '0',
-    symbol: '',
-    decimals: 18,
-  });
-  const [isVaultShareLoading, setIsVaultShareLoading] = useState(false);
-  const [vaultShareError, setVaultShareError] = useState('');
 
   const primaryToken = vault?.underlyingTokens?.[0];
+  const shareToken = useMemo(
+    () => ({
+      address: vault?.address || '',
+      symbol: shareBalance?.symbol || vault?.lpTokens?.[0]?.symbol || vault?.name || 'Vault share',
+      decimals: shareBalance?.decimals ?? vault?.lpTokens?.[0]?.decimals ?? 18,
+    }),
+    [shareBalance?.decimals, shareBalance?.symbol, vault]
+  );
+  const availableShareBalance = useMemo(
+    () => ({
+      raw: shareBalance?.raw ?? 0n,
+      formatted: shareBalance?.formatted || '0',
+      symbol: shareToken.symbol,
+      decimals: shareToken.decimals,
+    }),
+    [shareBalance?.formatted, shareBalance?.raw, shareToken.decimals, shareToken.symbol]
+  );
 
   useEffect(() => {
     if (!quoteExpiresAt) {
@@ -166,12 +177,11 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
   const resetFlow = useCallback(() => {
     resetQuote();
     setAmount('');
-    setBalance({ raw: 0n, formatted: '0' });
     setNeedsApproval(false);
     setIsApprovalPending(false);
-    setIsDepositPending(false);
+    setIsWithdrawPending(false);
     setApprovalHash('');
-    setDepositHash('');
+    setWithdrawHash('');
     setStatusLabel('');
     setError('');
     setSuccessMessage('');
@@ -183,147 +193,59 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
       transactionTarget: '',
       transactionValue: '0',
     });
-    setVaultShareBalance({
-      raw: 0n,
-      formatted: '0',
-      symbol: '',
-      decimals: 18,
-    });
-    setIsVaultShareLoading(false);
-    setVaultShareError('');
   }, [resetQuote]);
 
   useEffect(() => {
     resetFlow();
-  }, [primaryToken?.address, resetFlow, vault?.address, wallet.account]);
+  }, [resetFlow, vault?.address, wallet.account]);
 
-  const refreshVaultShareBalance = useCallback(
-    async (activeQuote = quote) => {
-      if (!wallet.provider || !wallet.account || !vault?.address) {
-        setVaultShareBalance({
-          raw: 0n,
-          formatted: '0',
-          symbol: '',
-          decimals: 18,
-        });
-        setVaultShareError('');
-        return;
-      }
-
-      const shareDecimals =
-        activeQuote?.estimate?.toToken?.decimals ?? vault.lpTokens?.[0]?.decimals ?? 18;
-      const shareSymbol =
-        activeQuote?.estimate?.toToken?.symbol ?? vault.lpTokens?.[0]?.symbol ?? vault.name;
-
-      setIsVaultShareLoading(true);
-      setVaultShareError('');
-
-      try {
-        const nextBalance = await getTokenBalance({
-          tokenAddress: vault.address,
-          account: wallet.account,
-          provider: wallet.provider,
-          decimals: shareDecimals,
-        });
-
-        setVaultShareBalance({
-          ...nextBalance,
-          symbol: shareSymbol,
-          decimals: shareDecimals,
-        });
-        return {
-          ...nextBalance,
-          symbol: shareSymbol,
-          decimals: shareDecimals,
-        };
-      } catch (shareBalanceError) {
-        setVaultShareError(shareBalanceError.message || 'Unable to verify vault receipt balance');
-        return null;
-      } finally {
-        setIsVaultShareLoading(false);
-      }
-    },
-    [quote, vault, wallet.account, wallet.provider]
-  );
-
-  useEffect(() => {
-    if (!wallet.isConnected || !wallet.account || !vault?.address) {
-      return;
-    }
-
-    void refreshVaultShareBalance();
-  }, [refreshVaultShareBalance, vault?.address, wallet.account, wallet.isConnected]);
-
-  const refreshBalanceAndAllowance = useCallback(
+  const refreshShareBalanceAndAllowance = useCallback(
     async (activeQuote, amountUnits) => {
-      if (!wallet.provider || !wallet.account || !primaryToken?.address) {
+      if (!wallet.provider || !wallet.account || !shareToken.address) {
         return;
       }
 
-      setIsBalanceLoading(true);
-
-      try {
-        const [nextBalance, nextAllowance] = await Promise.all([
-          getTokenBalance({
-            tokenAddress: primaryToken.address,
-            account: wallet.account,
-            provider: wallet.provider,
-            decimals: primaryToken.decimals || 18,
-          }),
-          getTokenAllowance({
-            tokenAddress: primaryToken.address,
-            owner: wallet.account,
-            spender: activeQuote?.estimate?.approvalAddress,
-            provider: wallet.provider,
-          }),
-        ]);
-
-        setBalance(nextBalance);
-        setNeedsApproval(
-          !isNativeToken(primaryToken.address) &&
-            nextAllowance < BigInt(amountUnits || activeQuote.action?.fromAmount || 0)
-        );
-      } finally {
-        setIsBalanceLoading(false);
-      }
+      const nextAllowance = await getTokenAllowance({
+        tokenAddress: shareToken.address,
+        owner: wallet.account,
+        spender: activeQuote?.estimate?.approvalAddress,
+        provider: wallet.provider,
+      });
+      setNeedsApproval(nextAllowance < BigInt(amountUnits || activeQuote.action?.fromAmount || 0));
     },
-    [primaryToken?.address, primaryToken?.decimals, wallet.account, wallet.provider]
+    [shareToken.address, wallet.account, wallet.provider]
   );
 
   const prepareQuote = useCallback(async () => {
-    if (!vault || !primaryToken?.address) {
-      throw new Error('Select a vault with a deposit token first');
+    if (!vault?.address || !primaryToken?.address) {
+      throw new Error('Select a redeemable vault first');
     }
 
     if (!wallet.isConnected || !wallet.account) {
-      throw new Error('Connect your wallet to prepare a deposit');
+      throw new Error('Connect your wallet to prepare a withdrawal');
     }
 
-    if (!isWalletAddress(wallet.account)) {
-      throw new Error('Connected wallet address is invalid');
-    }
+    const amountUnits = parseAmountToUnits(amount, shareToken.decimals);
 
     setError('');
     setSuccessMessage('');
-    setStatusLabel('Preparing quote...');
+    setStatusLabel('Preparing route...');
     setApprovalHash('');
-    setDepositHash('');
-
-    const amountUnits = parseAmountToUnits(amount, primaryToken.decimals || 18);
+    setWithdrawHash('');
 
     try {
       const nextQuote = await requestQuote({
         fromChain: String(vault.chainId),
         toChain: String(vault.chainId),
-        fromToken: primaryToken.address,
-        toToken: vault.address,
+        fromToken: vault.address,
+        toToken: primaryToken.address,
         fromAddress: wallet.account,
         toAddress: wallet.account,
         fromAmount: amountUnits,
       });
 
       const expiresAt = Date.now() + QUOTE_TTL_MS;
-      const validatedTargets = validatePreparedQuote({
+      const validatedTargets = validateWithdrawQuote({
         quote: nextQuote,
         vault,
         primaryToken,
@@ -332,11 +254,11 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
         quoteExpiresAt: expiresAt,
       });
 
-      await refreshBalanceAndAllowance(nextQuote, amountUnits);
+      await refreshShareBalanceAndAllowance(nextQuote, amountUnits);
       setQuoteTargets(validatedTargets);
       setQuotedAmount(amount);
       setQuoteExpiresAt(expiresAt);
-      setStatusLabel('Quote ready');
+      setStatusLabel('Route ready');
       return nextQuote;
     } catch (quoteRequestError) {
       const message = getFriendlyTransactionMessage(quoteRequestError, 'quote').message;
@@ -347,15 +269,16 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
   }, [
     amount,
     primaryToken,
-    refreshBalanceAndAllowance,
+    refreshShareBalanceAndAllowance,
     requestQuote,
+    shareToken.decimals,
     vault,
     wallet.account,
     wallet.isConnected,
   ]);
 
   useEffect(() => {
-    if (!wallet.isConnected || !wallet.account || !vault?.address || !primaryToken?.address) {
+    if (!vault?.isRedeemable || !wallet.isConnected || !wallet.account || !amount) {
       return;
     }
 
@@ -363,12 +286,12 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
       return;
     }
 
-    if (!amount || isApprovalPending || isDepositPending || isQuoteLoading) {
+    if (isApprovalPending || isWithdrawPending || isQuoteLoading) {
       return;
     }
 
     try {
-      parseAmountToUnits(amount, primaryToken.decimals || 18);
+      parseAmountToUnits(amount, shareToken.decimals);
     } catch {
       return;
     }
@@ -385,23 +308,22 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
   }, [
     amount,
     isApprovalPending,
-    isDepositPending,
     isQuoteExpired,
     isQuoteLoading,
+    isWithdrawPending,
     prepareQuote,
-    primaryToken?.address,
-    primaryToken?.decimals,
     quote,
     quotedAmount,
-    vault?.address,
+    shareToken.decimals,
     vault?.chainId,
+    vault?.isRedeemable,
     wallet.account,
     wallet.chainId,
     wallet.isConnected,
   ]);
 
   const approve = useCallback(async () => {
-    if (!quote || !primaryToken?.address || isNativeToken(primaryToken.address)) {
+    if (!quote || !vault?.address) {
       return;
     }
 
@@ -411,12 +333,8 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     setStatusLabel('Waiting for approval...');
 
     try {
-      const expectedAmountUnits = parseAmountToUnits(
-        quotedAmount || amount,
-        primaryToken.decimals || 18
-      );
-
-      const validatedTargets = validatePreparedQuote({
+      const expectedAmountUnits = parseAmountToUnits(quotedAmount || amount, shareToken.decimals);
+      const validatedTargets = validateWithdrawQuote({
         quote,
         vault,
         primaryToken,
@@ -427,7 +345,7 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
 
       const signer = await wallet.getSigner();
       const approvalTx = await approveToken({
-        tokenAddress: primaryToken.address,
+        tokenAddress: vault.address,
         spender: validatedTargets.approvalTarget,
         amount: quote.action?.fromAmount,
         signer,
@@ -437,7 +355,7 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
       await approvalTx.wait();
       setNeedsApproval(false);
       setStatusLabel('Approval confirmed');
-      await refreshBalanceAndAllowance(quote, quote.action?.fromAmount);
+      await refreshShareBalanceAndAllowance(quote, quote.action?.fromAmount);
     } catch (approvalError) {
       setError(getFriendlyTransactionMessage(approvalError, 'approve').message);
       setStatusLabel('');
@@ -451,28 +369,26 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     quote,
     quoteExpiresAt,
     quotedAmount,
-    refreshBalanceAndAllowance,
+    refreshShareBalanceAndAllowance,
+    shareToken.decimals,
     vault,
     wallet,
   ]);
 
-  const deposit = useCallback(async () => {
+  const withdraw = useCallback(async () => {
     if (!quote?.transactionRequest) {
-      throw new Error('Prepare a quote before depositing');
+      throw new Error('Prepare a route before withdrawing');
     }
 
     setError('');
     setSuccessMessage('');
-    setIsDepositPending(true);
-    setStatusLabel('Confirming transaction...');
+    setIsWithdrawPending(true);
+    setStatusLabel('Confirming withdrawal...');
 
     try {
-      const expectedAmountUnits = parseAmountToUnits(
-        quotedAmount || amount,
-        primaryToken?.decimals || 18
-      );
+      const expectedAmountUnits = parseAmountToUnits(quotedAmount || amount, shareToken.decimals);
 
-      validatePreparedQuote({
+      validateWithdrawQuote({
         quote,
         vault,
         primaryToken,
@@ -482,17 +398,16 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
       });
 
       const signer = await wallet.getSigner();
-      const depositTx = await signer.sendTransaction(quote.transactionRequest);
-      setDepositHash(depositTx.hash);
+      const withdrawTx = await signer.sendTransaction(quote.transactionRequest);
+      setWithdrawHash(withdrawTx.hash);
 
       if (quote.action?.fromChainId === quote.action?.toChainId) {
         setStatusLabel('Waiting for confirmation...');
-        await depositTx.wait();
-        setStatusLabel('Deposit complete');
-        setSuccessMessage('Deposit confirmed on-chain.');
-        await refreshBalanceAndAllowance(quote, quote.action?.fromAmount);
-        const nextShareBalance = await refreshVaultShareBalance(quote);
-        onDepositSuccess?.(
+        await withdrawTx.wait();
+        setStatusLabel('Withdraw complete');
+        setSuccessMessage('Vault position redeemed back to your wallet.');
+        const nextShareBalance = await refreshVaultShareBalance();
+        onWithdrawSuccess?.(
           wallet.account,
           buildFallbackVaultPosition({
             vault,
@@ -500,25 +415,26 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
             shareBalance: nextShareBalance,
           })
         );
+        await refreshShareBalanceAndAllowance(quote, quote.action?.fromAmount);
         return;
       }
 
-      setStatusLabel('Bridging in progress...');
+      setStatusLabel('Withdrawal in progress...');
       let attempts = 0;
       let status = null;
 
       while (attempts < MAX_STATUS_POLLS) {
         status = await fetchComposerStatus({
-          txHash: depositTx.hash,
+          txHash: withdrawTx.hash,
           fromChain: quote.action?.fromChainId,
           toChain: quote.action?.toChainId,
         });
 
         if (status.status === 'DONE') {
-          setStatusLabel('Deposit complete');
-          setSuccessMessage('Cross-chain deposit completed successfully.');
-          const nextShareBalance = await refreshVaultShareBalance(quote);
-          onDepositSuccess?.(
+          setStatusLabel('Withdraw complete');
+          setSuccessMessage('Vault position redeemed back to your wallet.');
+          const nextShareBalance = await refreshVaultShareBalance();
+          onWithdrawSuccess?.(
             wallet.account,
             buildFallbackVaultPosition({
               vault,
@@ -536,42 +452,37 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
         attempts += 1;
         await new Promise((resolve) => window.setTimeout(resolve, STATUS_POLL_INTERVAL));
       }
-
-      if (status?.status !== 'DONE') {
-        setStatusLabel('Deposit sent. Final confirmation is still pending.');
-        setSuccessMessage('Transaction submitted. Cross-chain completion may take a few minutes.');
-      }
-    } catch (depositError) {
-      setError(getFriendlyTransactionMessage(depositError, 'deposit').message);
+    } catch (withdrawError) {
+      setError(getFriendlyTransactionMessage(withdrawError, 'deposit').message);
       setStatusLabel('');
-      throw depositError;
+      throw withdrawError;
     } finally {
-      setIsDepositPending(false);
+      setIsWithdrawPending(false);
     }
   }, [
     amount,
-    onDepositSuccess,
+    onWithdrawSuccess,
     primaryToken,
     quote,
     quoteExpiresAt,
     quotedAmount,
-    refreshBalanceAndAllowance,
+    refreshShareBalanceAndAllowance,
     refreshVaultShareBalance,
+    shareToken.decimals,
     vault,
     wallet,
   ]);
 
-  const canDeposit =
+  const hasSufficientBalance = availableShareBalance.raw >= BigInt(quote?.action?.fromAmount || 0);
+  const isQuoteStale = Boolean(quote?.transactionRequest) && quotedAmount !== amount;
+  const canWithdraw =
     Boolean(quote?.transactionRequest) &&
     quotedAmount === amount &&
     !needsApproval &&
     !isApprovalPending &&
-    !isDepositPending &&
+    !isWithdrawPending &&
     !isQuoteExpired &&
-    balance.raw >= BigInt(quote?.action?.fromAmount || 0);
-
-  const hasSufficientBalance = balance.raw >= BigInt(quote?.action?.fromAmount || 0);
-  const isQuoteStale = Boolean(quote?.transactionRequest) && quotedAmount !== amount;
+    hasSufficientBalance;
 
   const formattedAmountOut =
     quote?.estimate?.toAmount && quote?.estimate?.toToken?.decimals !== undefined
@@ -584,33 +495,27 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     quote,
     quoteError,
     isQuoteLoading,
-    balance,
-    isBalanceLoading,
     needsApproval,
     isApprovalPending,
-    isDepositPending,
+    isWithdrawPending,
     approvalHash,
-    depositHash,
+    withdrawHash,
     statusLabel,
     error,
     successMessage,
-    canDeposit,
+    canWithdraw,
     hasSufficientBalance,
     isQuoteExpired,
     isQuoteStale,
     quotedAmount,
-    quoteExpiresAt,
     quoteTimeRemaining,
     quoteTargets,
-    primaryToken,
+    walletShareBalance: availableShareBalance,
+    shareToken,
     formattedAmountOut,
-    vaultShareBalance,
-    isVaultShareLoading,
-    vaultShareError,
     prepareQuote,
     approve,
-    deposit,
+    withdraw,
     resetFlow,
-    refreshVaultShareBalance,
   };
 }

@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDepositFlow } from '../hooks/useDepositFlow';
+import { useWithdrawFlow } from '../hooks/useWithdrawFlow';
+import { buildFallbackVaultPosition } from '../lib/positions';
 import {
   formatCurrency,
   formatPercent,
@@ -46,7 +48,7 @@ function getFlowSteps({ wallet, vault, quoteReady, needsApproval, successMessage
       active: !wallet.isConnected,
     },
     {
-      label: 'Quote',
+      label: 'Route',
       done: wallet.isConnected && onCorrectChain && quoteReady,
       active: wallet.isConnected && onCorrectChain && !quoteReady,
     },
@@ -68,6 +70,7 @@ export function VaultDetailPanel({
   wallet,
   walletChains,
   onDepositSuccess,
+  onPositionProofChange,
   onOpenWalletModal,
 }) {
   const [isReviewConfirmed, setIsReviewConfirmed] = useState(false);
@@ -89,14 +92,52 @@ export function VaultDetailPanel({
     successMessage,
     canDeposit,
     hasSufficientBalance,
+    isQuoteExpired,
     isQuoteStale,
     quotedAmount,
+    quoteTimeRemaining,
+    quoteTargets,
     primaryToken,
     formattedAmountOut,
+    vaultShareBalance,
     prepareQuote,
     approve,
     deposit,
+    refreshVaultShareBalance,
   } = useDepositFlow({ vault, wallet, onDepositSuccess });
+  const {
+    amount: withdrawAmount,
+    setAmount: setWithdrawAmount,
+    quote: withdrawQuote,
+    quoteError: withdrawQuoteError,
+    isQuoteLoading: isWithdrawQuoteLoading,
+    needsApproval: needsWithdrawApproval,
+    isApprovalPending: isWithdrawApprovalPending,
+    isWithdrawPending,
+    approvalHash: withdrawApprovalHash,
+    withdrawHash,
+    statusLabel: withdrawStatusLabel,
+    error: withdrawError,
+    successMessage: withdrawSuccessMessage,
+    canWithdraw,
+    hasSufficientBalance: hasSufficientWithdrawBalance,
+    isQuoteExpired: isWithdrawQuoteExpired,
+    isQuoteStale: isWithdrawQuoteStale,
+    quotedAmount: quotedWithdrawAmount,
+    quoteTimeRemaining: withdrawQuoteTimeRemaining,
+    quoteTargets: withdrawQuoteTargets,
+    walletShareBalance,
+    shareToken,
+    formattedAmountOut: formattedWithdrawAmountOut,
+    approve: approveWithdraw,
+    withdraw,
+  } = useWithdrawFlow({
+    vault,
+    wallet,
+    shareBalance: vaultShareBalance,
+    refreshVaultShareBalance,
+    onWithdrawSuccess: onDepositSuccess,
+  });
 
   const targetChain = useMemo(
     () => walletChains?.find((chain) => Number(chain.id) === Number(vault?.chainId)) || null,
@@ -115,6 +156,25 @@ export function VaultDetailPanel({
       { label: 'Redeemable', value: vault.isRedeemable ? 'Yes' : 'No' },
     ];
   }, [vault]);
+
+  useEffect(() => {
+    if (!vault || !wallet.account || !onPositionProofChange) {
+      return;
+    }
+
+    if (vaultShareBalance.raw > 0n) {
+      onPositionProofChange(
+        buildFallbackVaultPosition({
+          vault,
+          walletAddress: wallet.account,
+          shareBalance: vaultShareBalance,
+        })
+      );
+      return;
+    }
+
+    onPositionProofChange(null);
+  }, [onPositionProofChange, vault, vaultShareBalance, wallet.account]);
 
   if (!vault) {
     return (
@@ -147,6 +207,18 @@ export function VaultDetailPanel({
   const suggestedOneUnit = primaryToken ? `1 ${primaryToken.symbol}` : 'Demo amount';
   const routeType =
     quote?.action?.fromChainId === quote?.action?.toChainId ? 'Same-chain' : 'Cross-chain';
+  const quoteWindowLabel = quote
+    ? isQuoteExpired
+      ? 'Expired'
+      : `${quoteTimeRemaining}s left`
+    : 'Not prepared';
+  const reviewReady = Boolean(quote) && isReviewConfirmed;
+  const hasVaultShareBalance = vaultShareBalance.raw > 0n;
+  const withdrawRouteLabel = withdrawQuote
+    ? isWithdrawQuoteExpired
+      ? 'Expired'
+      : `${withdrawQuoteTimeRemaining}s left`
+    : 'Waiting for amount';
 
   async function handlePrimaryAction() {
     try {
@@ -164,6 +236,7 @@ export function VaultDetailPanel({
         return;
       }
 
+      setIsReviewConfirmed(false);
       await prepareQuote();
     } catch {
       // State is already handled in the wallet and deposit hooks.
@@ -185,6 +258,19 @@ export function VaultDetailPanel({
 
   function handleQuickAmount(nextAmount) {
     setAmount(nextAmount);
+  }
+
+  async function handleWithdrawAction() {
+    try {
+      if (needsWithdrawApproval) {
+        await approveWithdraw();
+        return;
+      }
+
+      await withdraw();
+    } catch {
+      // State is already handled in the withdraw hook.
+    }
   }
 
   return (
@@ -278,19 +364,6 @@ export function VaultDetailPanel({
           for the demo.
         </div>
 
-        <label className="mt-4 flex items-start gap-3 rounded-none border-2 border-border bg-white px-4 py-3 text-sm text-foreground">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4 accent-black"
-            checked={isReviewConfirmed}
-            onChange={(event) => setIsReviewConfirmed(event.target.checked)}
-          />
-          <span>
-            I reviewed the wallet, network, token, amount, and selected vault before approving or
-            depositing.
-          </span>
-        </label>
-
         <div className="mt-5 space-y-4">
           <label className="space-y-2">
             <span className="field-label">Deposit token</span>
@@ -354,13 +427,20 @@ export function VaultDetailPanel({
             type="button"
             className="retro-button w-full"
             onClick={handlePrimaryAction}
-            disabled={isQuoteLoading || isApprovalPending || isDepositPending}
+            disabled={
+              isQuoteLoading ||
+              isApprovalPending ||
+              isDepositPending ||
+              (Boolean(quote) && !isQuoteExpired && !isQuoteStale)
+            }
           >
             {wallet.isConnected
               ? wallet.chainId === Number(vault.chainId)
                 ? isQuoteLoading
-                  ? 'Preparing Quote...'
-                  : 'Prepare Quote'
+                  ? 'Getting Route...'
+                  : quote && !isQuoteExpired && !isQuoteStale
+                    ? 'Route Ready'
+                    : 'Refresh Route'
                 : `Switch to ${targetChain?.name || vault.network}`
               : 'Choose Wallet'}
           </button>
@@ -374,7 +454,8 @@ export function VaultDetailPanel({
               isQuoteLoading ||
               isApprovalPending ||
               isDepositPending ||
-              !isReviewConfirmed ||
+              !reviewReady ||
+              isQuoteExpired ||
               isQuoteStale ||
               (!needsApproval && !canDeposit)
             }
@@ -395,9 +476,30 @@ export function VaultDetailPanel({
           </div>
         )}
 
-        {!isReviewConfirmed && (
+        {!quote && (
           <div className="mt-4 border-2 border-border bg-card px-4 py-3 text-sm text-foreground">
-            Review the deposit details before approval or execution.
+            Enter an amount and the route will prepare automatically.
+          </div>
+        )}
+
+        {quote && (
+          <label className="mt-4 flex items-start gap-3 rounded-none border-2 border-border bg-white px-4 py-3 text-sm text-foreground">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-black"
+              checked={isReviewConfirmed}
+              onChange={(event) => setIsReviewConfirmed(event.target.checked)}
+            />
+            <span>
+              I reviewed the wallet, network, token, amount, quote window, and transaction target
+              before approving or depositing.
+            </span>
+          </label>
+        )}
+
+        {quote && !isReviewConfirmed && (
+          <div className="mt-4 border-2 border-border bg-card px-4 py-3 text-sm text-foreground">
+            Review the quote details before approval or execution.
           </div>
         )}
 
@@ -414,6 +516,12 @@ export function VaultDetailPanel({
           </div>
         )}
 
+        {isQuoteExpired && (
+          <div className="mt-4 border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
+            Quote expired. Prepare a new quote before approving or depositing.
+          </div>
+        )}
+
         {statusLabel && (
           <div className="mt-4 border-2 border-border bg-card px-4 py-3 text-sm text-foreground">
             {statusLabel}
@@ -423,6 +531,156 @@ export function VaultDetailPanel({
         {successMessage && (
           <div className="mt-4 border-2 border-success bg-white px-4 py-3 text-sm text-foreground">
             {successMessage}
+          </div>
+        )}
+
+        {vault.isRedeemable && (
+          <div className="mt-5 grid gap-3 border-t-2 border-border pt-5">
+            <div className="rounded-none border-2 border-border bg-card px-4 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-head uppercase tracking-[0.18em] text-muted-foreground">
+                    Withdraw back to wallet
+                  </p>
+                  <p className="mt-2 text-sm text-foreground">
+                    Redeem your vault shares back into {primaryToken?.symbol || 'the deposit token'}.
+                  </p>
+                </div>
+                <span className="retro-badge">
+                  {withdrawStatusLabel || (hasVaultShareBalance ? 'Ready to redeem' : 'No shares yet')}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="retro-metric">
+                <span className="metric-label">Available shares</span>
+                <span className="metric-value">
+                  {walletShareBalance.formatted} {shareToken.symbol}
+                </span>
+              </div>
+              <div className="retro-metric">
+                <span className="metric-label">Redeem route</span>
+                <span className="metric-value">{withdrawRouteLabel}</span>
+              </div>
+            </div>
+
+            <label className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="field-label">Withdraw amount</span>
+                <span className="text-xs text-muted-foreground">
+                  In {shareToken.symbol} shares
+                </span>
+              </div>
+              <input
+                className="retro-input"
+                placeholder={`e.g. ${walletShareBalance.formatted || '0'} ${shareToken.symbol}`}
+                value={withdrawAmount}
+                onChange={(event) => setWithdrawAmount(event.target.value)}
+                inputMode="decimal"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="retro-link"
+                  onClick={() => setWithdrawAmount(walletShareBalance.formatted)}
+                  disabled={!hasVaultShareBalance}
+                >
+                  Use full share balance
+                </button>
+              </div>
+            </label>
+
+            {(withdrawError || withdrawQuoteError) && (
+              <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
+                {withdrawError || withdrawQuoteError}
+              </div>
+            )}
+
+            {withdrawSuccessMessage && (
+              <div className="border-2 border-success bg-white px-4 py-3 text-sm text-foreground">
+                {withdrawSuccessMessage}
+              </div>
+            )}
+
+            {!hasSufficientWithdrawBalance && withdrawQuote && (
+              <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
+                Not enough vault shares for this withdrawal amount.
+              </div>
+            )}
+
+            {isWithdrawQuoteStale && (
+              <div className="border-2 border-border bg-card px-4 py-3 text-sm text-foreground">
+                Share amount changed from {quotedWithdrawAmount || 'the prepared route'}. The route
+                is refreshing automatically.
+              </div>
+            )}
+
+            {isWithdrawQuoteExpired && (
+              <div className="border-2 border-danger bg-white px-4 py-3 text-sm text-danger">
+                Withdrawal route expired. Enter the amount again or wait for it to refresh.
+              </div>
+            )}
+
+            {withdrawQuote && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="retro-metric">
+                  <span className="metric-label">Estimated return</span>
+                  <span className="metric-value">
+                    {formattedWithdrawAmountOut || 'Checking...'}
+                  </span>
+                </div>
+                <div className="retro-metric">
+                  <span className="metric-label">Execute on</span>
+                  <span className="metric-value font-mono text-xs">
+                    {truncateAddress(withdrawQuoteTargets.transactionTarget || 'Unavailable', 10, 6)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="retro-button w-full"
+              onClick={handleWithdrawAction}
+              disabled={
+                !withdrawAmount ||
+                !withdrawQuote ||
+                isWithdrawQuoteLoading ||
+                isWithdrawApprovalPending ||
+                isWithdrawPending ||
+                isWithdrawQuoteExpired ||
+                isWithdrawQuoteStale ||
+                (!needsWithdrawApproval && !canWithdraw)
+              }
+            >
+              {needsWithdrawApproval
+                ? isWithdrawApprovalPending
+                  ? 'Approving Shares...'
+                  : 'Approve Shares'
+                : isWithdrawPending
+                  ? 'Withdrawing...'
+                  : 'Withdraw to Wallet'}
+            </button>
+
+            {(withdrawApprovalHash || withdrawHash) && (
+              <div className="grid gap-3">
+                {withdrawApprovalHash && (
+                  <div className="rounded-none border-2 border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                    Withdraw approval tx:{' '}
+                    <span className="font-mono">
+                      {truncateAddress(withdrawApprovalHash, 10, 8)}
+                    </span>
+                  </div>
+                )}
+                {withdrawHash && (
+                  <div className="rounded-none border-2 border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                    Withdraw tx:{' '}
+                    <span className="font-mono">{truncateAddress(withdrawHash, 10, 8)}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -452,6 +710,19 @@ export function VaultDetailPanel({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="retro-metric">
+                <span className="metric-label">Quote window</span>
+                <span className="metric-value">{quoteWindowLabel}</span>
+              </div>
+              <div className="retro-metric">
+                <span className="metric-label">Execute on</span>
+                <span className="metric-value font-mono text-xs">
+                  {truncateAddress(quoteTargets.transactionTarget || 'Unavailable', 10, 6)}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="retro-metric">
                 <span className="metric-label">From</span>
                 <span className="metric-value">
                   {primaryToken?.symbol || 'Token'} on {targetChain?.name || vault.network}
@@ -467,13 +738,13 @@ export function VaultDetailPanel({
               <div className="retro-metric">
                 <span className="metric-label">Approval target</span>
                 <span className="metric-value font-mono text-xs">
-                  {truncateAddress(quote.estimate?.approvalAddress || 'Unavailable', 10, 6)}
+                  {truncateAddress(quoteTargets.approvalTarget || 'Unavailable', 10, 6)}
                 </span>
               </div>
               <div className="retro-metric">
-                <span className="metric-label">Transaction request</span>
-                <span className="metric-value">
-                  {quote.transactionRequest ? 'Ready' : 'Missing'}
+                <span className="metric-label">Tx value</span>
+                <span className="metric-value font-mono text-xs">
+                  {quoteTargets.transactionValue || '0'}
                 </span>
               </div>
             </div>

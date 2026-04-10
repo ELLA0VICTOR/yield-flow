@@ -12,10 +12,13 @@ export function usePortfolioLookup() {
 
     try {
       const result = await fetchPortfolioPositions(address);
-      setPositions(result.positions || []);
+      const nextPositions = result.positions || [];
+      setPositions(nextPositions);
+      return nextPositions;
     } catch (lookupError) {
       setError(lookupError.message || 'Unable to fetch portfolio positions');
       setPositions([]);
+      return [];
     } finally {
       setIsLoading(false);
     }

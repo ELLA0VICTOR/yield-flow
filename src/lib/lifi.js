@@ -3,12 +3,16 @@ const QUEST_PROXY_BASE = '/api/quest';
 
 async function requestJson(url) {
   const response = await fetch(url);
-
+  const contentType = response.headers.get('content-type') || '';
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
     const message = payload?.message || `Request failed with status ${response.status}`;
     throw new Error(message);
+  }
+
+  if (payload === null || (!contentType.includes('application/json') && typeof payload !== 'object')) {
+    throw new Error('Unexpected response from LI.FI proxy');
   }
 
   return payload;

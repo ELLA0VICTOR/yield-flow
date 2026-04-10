@@ -36,9 +36,33 @@ export function useVaultExplorer(filters) {
     setError('');
 
     try {
-      const result = await fetchVaults(filters);
-      setVaults(result.data || []);
-      setTotal(result.total || 0);
+      const mergedVaults = [];
+      const seenKeys = new Set();
+      let cursor = '';
+      let resolvedTotal = 0;
+
+      do {
+        const result = await fetchVaults({
+          ...filters,
+          cursor,
+        });
+
+        const incomingVaults = result?.data || [];
+        resolvedTotal = result?.total || resolvedTotal;
+
+        incomingVaults.forEach((vault) => {
+          const key = `${vault.chainId}-${vault.address.toLowerCase()}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            mergedVaults.push(vault);
+          }
+        });
+
+        cursor = result?.nextCursor || '';
+      } while (cursor);
+
+      setVaults(mergedVaults);
+      setTotal(resolvedTotal || mergedVaults.length);
     } catch (loadError) {
       setError(loadError.message || 'Unable to load vaults');
       setVaults([]);

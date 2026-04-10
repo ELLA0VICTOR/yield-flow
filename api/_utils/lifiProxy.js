@@ -13,38 +13,81 @@ function appendSearchParams(url, query) {
   })
 }
 
-export async function proxyLifiRequest(req, res, upstreamBase) {
-  const pathSegments = Array.isArray(req.query.path)
-    ? req.query.path
-    : req.query.path
-      ? [req.query.path]
-      : []
-
-  const normalizedBase = upstreamBase.endsWith('/') ? upstreamBase : `${upstreamBase}/`
-  const upstreamUrl = new URL(pathSegments.join('/'), normalizedBase)
-  appendSearchParams(upstreamUrl, req.query)
-
-  const headers = {}
-
-  if (process.env.LIFI_API_KEY) {
-    headers['x-lifi-api-key'] = process.env.LIFI_API_KEY
+function resolvePathSegments(pathQuery) {
+  if (Array.isArray(pathQuery)) {
+    return pathQuery
   }
 
-  if (req.headers.accept) {
-    headers.accept = req.headers.accept
+  if (pathQuery) {
+    return [pathQuery]
   }
 
-  const upstreamResponse = await fetch(upstreamUrl, {
-    method: req.method || 'GET',
-    headers,
-  })
+  return []
+}
 
-  const contentType = upstreamResponse.headers.get('content-type')
-  const payload = await upstreamResponse.text()
+function assertAllowedMethod(method, allowedMethods) {
+  const normalizedMethod = String(method || 'GET').toUpperCase()
 
-  if (contentType) {
-    res.setHeader('content-type', contentType)
+  if (!allowedMethods.includes(normalizedMethod)) {
+    const error = new Error('Method not allowed')
+    error.statusCode = 405
+    throw error
   }
+}
 
-  res.status(upstreamResponse.status).send(payload)
+function assertAllowedPath(pathname, allowedPathPatterns) {
+  const isAllowed = allowedPathPatterns.some((pattern) => pattern.test(pathname))
+
+  if (!isAllowed) {
+    const error = new Error('Path not allowed')
+    error.statusCode = 403
+    throw error
+  }
+}
+
+export async function proxyLifiRequest(req, res, upstreamBase, options = {}) {
+  const {
+    allowedMethods = ['GET'],
+    allowedPathPatterns = [],
+  } = options
+
+  try {
+    assertAllowedMethod(req.method, allowedMethods)
+
+    const pathSegments = resolvePathSegments(req.query.path)
+    const normalizedPath = pathSegments.join('/')
+    assertAllowedPath(normalizedPath, allowedPathPatterns)
+
+    const normalizedBase = upstreamBase.endsWith('/') ? upstreamBase : `${upstreamBase}/`
+    const upstreamUrl = new URL(normalizedPath, normalizedBase)
+    appendSearchParams(upstreamUrl, req.query)
+
+    const headers = {}
+
+    if (process.env.LIFI_API_KEY) {
+      headers['x-lifi-api-key'] = process.env.LIFI_API_KEY
+    }
+
+    if (req.headers.accept) {
+      headers.accept = req.headers.accept
+    }
+
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: req.method || 'GET',
+      headers,
+    })
+
+    const contentType = upstreamResponse.headers.get('content-type')
+    const payload = await upstreamResponse.text()
+
+    if (contentType) {
+      res.setHeader('content-type', contentType)
+    }
+
+    res.status(upstreamResponse.status).send(payload)
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      message: error.message || 'Proxy request failed',
+    })
+  }
 }

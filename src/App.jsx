@@ -1,22 +1,31 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FilterBar } from './components/FilterBar';
 import { PortfolioLookup } from './components/PortfolioLookup';
 import { ToastNotice } from './components/ToastNotice';
 import { VaultCard } from './components/VaultCard';
 import { VaultDetailPanel } from './components/VaultDetailPanel';
 import { WalletModal } from './components/WalletModal';
-import { useWallet } from './hooks/useWallet';
 import { useVaultExplorer } from './hooks/useVaultExplorer';
+import { useWallet } from './hooks/useWallet';
 import { DEFAULT_VAULT_FILTERS, LANDING_CARDS, NAV_ITEMS } from './lib/constants';
 import { formatCurrency, formatPercent, truncateAddress } from './lib/formatters';
+import {
+  removeStoredFallbackPosition,
+  upsertStoredFallbackPosition,
+} from './lib/positions';
 
 function App() {
+  const pageSize = 18;
   const [draftFilters, setDraftFilters] = useState(DEFAULT_VAULT_FILTERS);
   const [activeFilters, setActiveFilters] = useState(DEFAULT_VAULT_FILTERS);
   const [selectedVaultKey, setSelectedVaultKey] = useState('');
   const [portfolioAutoAddress, setPortfolioAutoAddress] = useState('');
   const [portfolioRefreshToken, setPortfolioRefreshToken] = useState(0);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [currentVaultPage, setCurrentVaultPage] = useState(1);
+  const depositStudioRef = useRef(null);
+  const portfolioSectionRef = useRef(null);
+  const pendingScrollKeyRef = useRef('');
   const wallet = useWallet();
 
   const {
@@ -24,7 +33,6 @@ function App() {
     walletChains,
     protocols,
     vaults,
-    total,
     isReferenceLoading,
     isVaultLoading,
     error,
@@ -55,6 +63,14 @@ function App() {
     });
   }, [draftFilters.protocol, draftFilters.search, vaults]);
 
+  const totalVaultPages = Math.max(1, Math.ceil(visibleVaults.length / pageSize));
+  const visibleVaultPage = Math.min(currentVaultPage, totalVaultPages);
+
+  const paginatedVaults = useMemo(() => {
+    const startIndex = (visibleVaultPage - 1) * pageSize;
+    return visibleVaults.slice(startIndex, startIndex + pageSize);
+  }, [pageSize, visibleVaultPage, visibleVaults]);
+
   const stats = useMemo(() => {
     if (visibleVaults.length === 0) {
       return {
@@ -76,23 +92,41 @@ function App() {
   }, [visibleVaults]);
 
   const selectedVault = useMemo(() => {
-    if (visibleVaults.length === 0) {
-      return null;
-    }
-
     const matchingVault = visibleVaults.find(
       (vault) => `${vault.chainId}-${vault.address.toLowerCase()}` === selectedVaultKey
     );
 
-    return matchingVault || visibleVaults[0];
+    return matchingVault || null;
   }, [selectedVaultKey, visibleVaults]);
 
-  const featuredVault = selectedVault || visibleVaults[0] || null;
+  const featuredVault = selectedVault || paginatedVaults[0] || visibleVaults[0] || null;
 
   const connectedWalletChain = useMemo(
     () => walletChains.find((chain) => Number(chain.id) === Number(wallet.chainId)) || null,
     [wallet.chainId, walletChains]
   );
+
+  useEffect(() => {
+    if (!selectedVault) {
+      return;
+    }
+
+    if (
+      `${selectedVault.chainId}-${selectedVault.address.toLowerCase()}` !==
+      pendingScrollKeyRef.current
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      depositStudioRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+
+    pendingScrollKeyRef.current = '';
+  }, [selectedVault]);
 
   function updateDraftFilter(key, value) {
     setDraftFilters((current) => ({
@@ -102,6 +136,7 @@ function App() {
   }
 
   function applyFilters() {
+    setCurrentVaultPage(1);
     setActiveFilters((current) => ({
       ...current,
       chainId: draftFilters.chainId,
@@ -112,19 +147,89 @@ function App() {
     }));
   }
 
+  function clearSelectedVault() {
+    setSelectedVaultKey('');
+    pendingScrollKeyRef.current = '';
+  }
+
   function resetFilters() {
+    setCurrentVaultPage(1);
+    clearSelectedVault();
     setDraftFilters(DEFAULT_VAULT_FILTERS);
     setActiveFilters(DEFAULT_VAULT_FILTERS);
   }
 
-  function handleDepositSuccess(address) {
+  function openDepositStudio(nextVault) {
+    if (!nextVault) {
+      return;
+    }
+
+    const nextKey = `${nextVault.chainId}-${nextVault.address.toLowerCase()}`;
+    const selectedIndex = visibleVaults.findIndex(
+      (vault) => `${vault.chainId}-${vault.address.toLowerCase()}` === nextKey
+    );
+
+    setSelectedVaultKey(nextKey);
+    pendingScrollKeyRef.current = nextKey;
+
+    if (selectedIndex >= 0) {
+      setCurrentVaultPage(Math.floor(selectedIndex / pageSize) + 1);
+    }
+  }
+
+  function handleVaultSelection(nextVault) {
+    const nextKey = `${nextVault.chainId}-${nextVault.address.toLowerCase()}`;
+
+    if (selectedVaultKey === nextKey) {
+      clearSelectedVault();
+      return;
+    }
+
+    openDepositStudio(nextVault);
+  }
+
+  const handleDepositSuccess = useCallback((address, fallbackPosition = null) => {
     if (!address) {
       return;
     }
 
     setPortfolioAutoAddress(address);
+    if (fallbackPosition) {
+      upsertStoredFallbackPosition(fallbackPosition);
+    } else if (selectedVault) {
+      removeStoredFallbackPosition({
+        walletAddress: address,
+        chainId: selectedVault.chainId,
+        assetAddress: selectedVault.address,
+      });
+    }
     setPortfolioRefreshToken((current) => current + 1);
-  }
+
+    requestAnimationFrame(() => {
+      portfolioSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  }, [selectedVault]);
+
+  const handlePositionProofChange = useCallback((nextPosition) => {
+    if (!wallet.account || !selectedVault) {
+      return;
+    }
+
+    if (nextPosition) {
+      upsertStoredFallbackPosition(nextPosition);
+    } else {
+      removeStoredFallbackPosition({
+        walletAddress: wallet.account,
+        chainId: selectedVault.chainId,
+        assetAddress: selectedVault.address,
+      });
+    }
+
+    setPortfolioRefreshToken((current) => current + 1);
+  }, [selectedVault, wallet.account]);
 
   async function handleWalletSelection(option) {
     try {
@@ -179,7 +284,11 @@ function App() {
               onClick={() => setIsWalletModalOpen(true)}
               disabled={wallet.isConnecting}
             >
-              {wallet.isConnecting ? 'Connecting...' : wallet.hasProvider ? 'Connect Wallet' : 'Select Wallet'}
+              {wallet.isConnecting
+                ? 'Connecting...'
+                : wallet.hasProvider
+                  ? 'Connect Wallet'
+                  : 'Select Wallet'}
             </button>
           )}
         </div>
@@ -286,17 +395,13 @@ function App() {
                       Same-chain demo path: {featuredVault.network} +{' '}
                       {featuredVault.underlyingTokens?.[0]?.symbol || 'stablecoin'}
                     </p>
-                    <a
-                      href="#explore"
+                    <button
+                      type="button"
                       className="retro-button"
-                      onClick={() =>
-                        setSelectedVaultKey(
-                          `${featuredVault.chainId}-${featuredVault.address.toLowerCase()}`
-                        )
-                      }
+                      onClick={() => openDepositStudio(featuredVault)}
                     >
                       Open Deposit Studio
-                    </a>
+                    </button>
                   </div>
                 </>
               ) : (
@@ -359,27 +464,28 @@ function App() {
               <div>
                 <h2 className="font-head text-3xl text-foreground">Live Vaults</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Browse the vault list first, then use the selected vault panel to deposit.
+                  Pick any card to jump straight into the deposit flow below.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="retro-metric">
-                  <span className="metric-label">Showing</span>
+                  <span className="metric-label">Page</span>
                   <span className="metric-value">
-                    {visibleVaults.length} of {total}
+                    {visibleVaultPage} of {totalVaultPages}
                   </span>
                 </div>
                 <div className="retro-metric">
                   <span className="metric-label">Selected</span>
-                  <span className="metric-value">
-                    {selectedVault?.name || 'No vault'}
-                  </span>
+                  <span className="metric-value">{selectedVault?.name || 'None'}</span>
                 </div>
                 <div className="retro-metric">
-                  <span className="metric-label">Demo path</span>
+                  <span className="metric-label">Exit path</span>
                   <span className="metric-value">
-                    {selectedVault?.network || 'Base'} +{' '}
-                    {selectedVault?.underlyingTokens?.[0]?.symbol || 'USDC'}
+                    {selectedVault
+                      ? selectedVault.isRedeemable
+                        ? 'Redeemable: Yes'
+                        : 'Redeemable: No'
+                      : 'Select a vault'}
                   </span>
                 </div>
               </div>
@@ -403,31 +509,70 @@ function App() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                {visibleVaults.map((vault) => (
-                  <VaultCard
-                    key={`${vault.chainId}-${vault.address}`}
-                    vault={vault}
-                    isSelected={
-                      selectedVaultKey === `${vault.chainId}-${vault.address.toLowerCase()}`
-                    }
-                    onSelect={(nextVault) =>
-                      setSelectedVaultKey(
-                        `${nextVault.chainId}-${nextVault.address.toLowerCase()}`
-                      )
-                    }
-                  />
-                ))}
+              <div className="space-y-5">
+                <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+                  {paginatedVaults.map((vault) => (
+                    <VaultCard
+                      key={`${vault.chainId}-${vault.address}`}
+                      vault={vault}
+                      isSelected={
+                        selectedVaultKey === `${vault.chainId}-${vault.address.toLowerCase()}`
+                      }
+                      onSelect={handleVaultSelection}
+                    />
+                  ))}
+                </div>
+
+                {visibleVaults.length > pageSize && (
+                  <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                    <button
+                      type="button"
+                      className="retro-button retro-button-secondary"
+                      onClick={() => setCurrentVaultPage((current) => Math.max(1, current - 1))}
+                      disabled={visibleVaultPage === 1}
+                    >
+                      Previous
+                    </button>
+                    <div className="text-sm text-muted-foreground">
+                      Showing {(visibleVaultPage - 1) * pageSize + 1}-
+                      {Math.min(visibleVaultPage * pageSize, visibleVaults.length)} of{' '}
+                      {visibleVaults.length}
+                    </div>
+                    <button
+                      type="button"
+                      className="retro-button"
+                      onClick={() =>
+                        setCurrentVaultPage((current) => Math.min(totalVaultPages, current + 1))
+                      }
+                      disabled={visibleVaultPage === totalVaultPages}
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
-            <div className="space-y-4">
+            <div id="selected-vault" ref={depositStudioRef} className="space-y-4">
               <div className="section-heading max-w-none">
-                <p className="eyebrow">Selected vault</p>
-                <h3 className="section-title">Review and deposit.</h3>
-                <p className="section-copy">
-                  Once you pick a vault from the grid, the full deposit flow appears here.
-                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="eyebrow">Selected vault</p>
+                    <h3 className="section-title">Review and deposit.</h3>
+                    <p className="section-copy">
+                      Picking a vault jumps you here. Click the same card again to clear it.
+                    </p>
+                  </div>
+                  {selectedVault && (
+                    <button
+                      type="button"
+                      className="retro-button retro-button-secondary"
+                      onClick={clearSelectedVault}
+                    >
+                      Clear Selection
+                    </button>
+                  )}
+                </div>
               </div>
 
               <VaultDetailPanel
@@ -440,6 +585,7 @@ function App() {
                 wallet={wallet}
                 walletChains={walletChains}
                 onDepositSuccess={handleDepositSuccess}
+                onPositionProofChange={handlePositionProofChange}
                 onOpenWalletModal={() => setIsWalletModalOpen(true)}
               />
             </div>
@@ -447,7 +593,7 @@ function App() {
         </div>
       </section>
 
-      <section id="portfolio" className="section-band">
+      <section id="portfolio" ref={portfolioSectionRef} className="section-band">
         <div className="section-inner py-12">
           <div className="section-heading">
             <p className="eyebrow">Portfolio</p>

@@ -27,6 +27,9 @@ export function VaultCard({ vault, isSelected, onSelect }) {
             <span className={`retro-badge ${vault.isTransactional ? 'retro-badge-success' : ''}`}>
               {vault.isTransactional ? 'Deposit ready' : 'Data only'}
             </span>
+            <span className="retro-badge">
+              {vault.isRedeemable ? 'Redeemable: Yes' : 'Redeemable: No'}
+            </span>
             {isSelected && <span className="retro-badge">Pinned</span>}
           </div>
 
