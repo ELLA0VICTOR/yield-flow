@@ -139,24 +139,24 @@ export function PortfolioLookup({
         </p>
       </div>
 
-      <form className="grid gap-4 md:grid-cols-[1fr_auto]" onSubmit={handleSubmit}>
+      <form className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]" onSubmit={handleSubmit}>
         <input
           className="retro-input"
           placeholder="Paste a wallet address"
           value={walletAddress}
           onChange={(event) => setWalletAddress(event.target.value)}
         />
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 md:min-w-[300px] sm:flex-row">
           {connectedAccount && (
             <button
               type="button"
-              className="retro-button retro-button-secondary"
+              className="retro-button retro-button-secondary w-full sm:w-auto"
               onClick={() => void handleUseConnectedWallet()}
             >
               Use Connected Wallet
             </button>
           )}
-          <button type="submit" className="retro-button" disabled={isLoading}>
+          <button type="submit" className="retro-button w-full sm:w-auto" disabled={isLoading}>
             {isLoading ? 'Checking...' : 'Load positions'}
           </button>
         </div>
@@ -173,7 +173,7 @@ export function PortfolioLookup({
       )}
 
       {displayPositions.length > 0 && (
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="retro-metric">
             <span className="metric-label">Positions</span>
             <span className="metric-value">{displayPositions.length}</span>
@@ -191,7 +191,7 @@ export function PortfolioLookup({
         </div>
       )}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
         {displayPositions.map((position, index) => (
           <article key={`${position.asset.address}-${index}`} className="retro-panel bg-card p-4">
             <div className="mb-3 flex items-start justify-between gap-3">

@@ -33,9 +33,9 @@ export function WalletModal({ open, onClose, walletOptions, isConnecting, onSele
   const options = mergeWalletOptions(walletOptions);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
-      <div className="retro-panel w-full max-w-2xl p-6">
-        <div className="flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-6 sm:items-center">
+      <div className="retro-panel w-full max-w-2xl p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="eyebrow">Wallet setup</p>
             <h2 className="mt-2 font-head text-3xl text-foreground">Choose a wallet</h2>
@@ -44,7 +44,11 @@ export function WalletModal({ open, onClose, walletOptions, isConnecting, onSele
               network, token, and vault before approving.
             </p>
           </div>
-          <button type="button" className="retro-button retro-button-secondary" onClick={onClose}>
+          <button
+            type="button"
+            className="retro-button retro-button-secondary w-full sm:w-auto"
+            onClick={onClose}
+          >
             Close
           </button>
         </div>

@@ -49,6 +49,25 @@ export const LANDING_CARDS = [
   },
 ];
 
+export const FOOTER_LINK_GROUPS = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'Explorer', href: '#explore' },
+      { label: 'Portfolio', href: '#portfolio' },
+      { label: 'GitHub', href: 'https://github.com/ELLA0VICTOR/yield-flow', external: true },
+    ],
+  },
+  {
+    title: 'Protocols',
+    links: [
+      { label: 'LI.FI Earn', href: 'https://docs.li.fi/earn/overview', external: true },
+      { label: 'Morpho', href: 'https://morpho.org/', external: true },
+      { label: 'Euler', href: 'https://www.euler.finance/', external: true },
+    ],
+  },
+];
+
 export const EXPERIENCE_PILLARS = [
   {
     title: 'Clear first screen',

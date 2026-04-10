@@ -11,7 +11,7 @@ export function ToastNotice({ notice, onClose }) {
         : 'border-border bg-card';
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 max-w-sm">
+    <div className="fixed bottom-4 left-3 right-3 z-50 sm:bottom-5 sm:left-auto sm:right-5 sm:max-w-sm">
       <div className={`border-2 px-4 py-3 shadow-retro ${toneClass}`}>
         <div className="flex items-start justify-between gap-4">
           <div>

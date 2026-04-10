@@ -7,7 +7,12 @@ import { VaultDetailPanel } from './components/VaultDetailPanel';
 import { WalletModal } from './components/WalletModal';
 import { useVaultExplorer } from './hooks/useVaultExplorer';
 import { useWallet } from './hooks/useWallet';
-import { DEFAULT_VAULT_FILTERS, LANDING_CARDS, NAV_ITEMS } from './lib/constants';
+import {
+  DEFAULT_VAULT_FILTERS,
+  FOOTER_LINK_GROUPS,
+  LANDING_CARDS,
+  NAV_ITEMS,
+} from './lib/constants';
 import { formatCurrency, formatPercent, truncateAddress } from './lib/formatters';
 import {
   removeStoredFallbackPosition,
@@ -243,59 +248,69 @@ function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <nav className="site-nav">
-        <div className="section-inner flex items-center justify-between gap-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center border-2 border-border bg-primary font-head text-base shadow-retro">
-              YF
+        <div className="section-inner py-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center border-2 border-border bg-primary font-head text-base shadow-retro">
+                YF
+              </div>
+              <div>
+                <p className="font-head text-xl uppercase tracking-[0.14em] text-foreground">
+                  YieldFlow
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-head text-xl uppercase tracking-[0.14em] text-foreground">
-                YieldFlow
-              </p>
+
+            <div className="hidden items-center gap-2 md:flex">
+              {NAV_ITEMS.map((item) => (
+                <a key={item.href} href={item.href} className="retro-link">
+                  {item.label}
+                </a>
+              ))}
             </div>
+
+            {wallet.isConnected ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="border-2 border-border bg-card px-3 py-2 shadow-retro">
+                  <p className="text-[11px] font-head uppercase tracking-[0.16em] text-muted-foreground">
+                    {wallet.activeWallet?.name || connectedWalletChain?.name || 'Connected'}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {truncateAddress(wallet.account, 6, 4)}
+                  </p>
+                </div>
+                <button type="button" className="retro-button w-full sm:w-auto" onClick={wallet.refreshWallet}>
+                  Connected
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="retro-button w-full sm:w-auto md:w-auto"
+                onClick={() => setIsWalletModalOpen(true)}
+                disabled={wallet.isConnecting}
+              >
+                {wallet.isConnecting
+                  ? 'Connecting...'
+                  : wallet.hasProvider
+                    ? 'Connect Wallet'
+                    : 'Select Wallet'}
+              </button>
+            )}
           </div>
 
-          <div className="hidden items-center gap-2 md:flex">
+          <div className="mt-3 flex flex-wrap gap-2 md:hidden">
             {NAV_ITEMS.map((item) => (
               <a key={item.href} href={item.href} className="retro-link">
                 {item.label}
               </a>
             ))}
           </div>
-
-          {wallet.isConnected ? (
-            <div className="flex items-center gap-3">
-              <div className="hidden border-2 border-border bg-card px-3 py-2 shadow-retro sm:block">
-                <p className="text-[11px] font-head uppercase tracking-[0.16em] text-muted-foreground">
-                  {wallet.activeWallet?.name || connectedWalletChain?.name || 'Connected'}
-                </p>
-                <p className="mt-1 text-sm font-medium text-foreground">
-                  {truncateAddress(wallet.account, 6, 4)}
-                </p>
-              </div>
-              <button type="button" className="retro-button" onClick={wallet.refreshWallet}>
-                Connected
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="retro-button"
-              onClick={() => setIsWalletModalOpen(true)}
-              disabled={wallet.isConnecting}
-            >
-              {wallet.isConnecting
-                ? 'Connecting...'
-                : wallet.hasProvider
-                  ? 'Connect Wallet'
-                  : 'Select Wallet'}
-            </button>
-          )}
         </div>
       </nav>
 
       <header className="section-band">
-        <div className="section-inner py-14 md:py-18">
+        <div className="section-inner py-12 md:py-18">
           <div className="text-center">
             <div className="inline-flex items-center gap-2 border-2 border-border bg-card px-4 py-2 shadow-retro">
               <span className="font-head text-xs uppercase tracking-[0.16em] text-foreground">
@@ -316,10 +331,10 @@ function App() {
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <a href="#explore" className="retro-button">
+              <a href="#explore" className="retro-button w-full sm:w-auto">
                 Browse Vaults
               </a>
-              <a href="#portfolio" className="retro-button retro-button-secondary">
+              <a href="#portfolio" className="retro-button retro-button-secondary w-full sm:w-auto">
                 View Portfolio
               </a>
             </div>
@@ -356,7 +371,7 @@ function App() {
                 <>
                   <div className="mt-5 flex flex-col gap-4 text-left md:flex-row md:items-start md:justify-between">
                     <div>
-                      <h3 className="font-head text-3xl text-foreground">{featuredVault.name}</h3>
+                      <h3 className="font-head text-[2rem] text-foreground md:text-3xl">{featuredVault.name}</h3>
                       <p className="mt-2 text-sm text-muted-foreground">
                         {featuredVault.protocol?.name || 'Unknown protocol'} on {featuredVault.network}
                       </p>
@@ -397,7 +412,7 @@ function App() {
                     </p>
                     <button
                       type="button"
-                      className="retro-button"
+                      className="retro-button w-full sm:w-auto"
                       onClick={() => openDepositStudio(featuredVault)}
                     >
                       Open Deposit Studio
@@ -467,7 +482,7 @@ function App() {
                   Pick any card to jump straight into the deposit flow below.
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <div className="retro-metric">
                   <span className="metric-label">Page</span>
                   <span className="metric-value">
@@ -524,10 +539,10 @@ function App() {
                 </div>
 
                 {visibleVaults.length > pageSize && (
-                  <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                  <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
                     <button
                       type="button"
-                      className="retro-button retro-button-secondary"
+                      className="retro-button retro-button-secondary w-full sm:w-auto"
                       onClick={() => setCurrentVaultPage((current) => Math.max(1, current - 1))}
                       disabled={visibleVaultPage === 1}
                     >
@@ -540,7 +555,7 @@ function App() {
                     </div>
                     <button
                       type="button"
-                      className="retro-button"
+                      className="retro-button w-full sm:w-auto"
                       onClick={() =>
                         setCurrentVaultPage((current) => Math.min(totalVaultPages, current + 1))
                       }
@@ -566,7 +581,7 @@ function App() {
                   {selectedVault && (
                     <button
                       type="button"
-                      className="retro-button retro-button-secondary"
+                      className="retro-button retro-button-secondary w-full sm:w-auto"
                       onClick={clearSelectedVault}
                     >
                       Clear Selection
@@ -612,6 +627,58 @@ function App() {
           </div>
         </div>
       </section>
+
+      <footer className="section-band border-b-0">
+        <div className="section-inner py-10">
+          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center border-2 border-border bg-primary font-head text-base shadow-retro">
+                  YF
+                </div>
+                <p className="font-head text-xl uppercase tracking-[0.14em] text-foreground">
+                  YieldFlow
+                </p>
+              </div>
+              <p className="max-w-xl text-sm leading-7 text-muted-foreground">
+                A retro-styled LI.FI Earn app for discovering stablecoin vaults, depositing with
+                Composer, and verifying positions after execution.
+              </p>
+            </div>
+
+            {FOOTER_LINK_GROUPS.map((group) => (
+              <div key={group.title} className="space-y-4">
+                <p className="footer-title">{group.title}</p>
+                <div className="flex flex-col gap-3">
+                  {group.links.map((link) => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      className="footer-link"
+                      target={link.external ? '_blank' : undefined}
+                      rel={link.external ? 'noreferrer' : undefined}
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3 border-t-2 border-border pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <p>Built for the DeFi Mullet Hackathon using LI.FI Earn and Composer.</p>
+            <a
+              href="https://github.com/ELLA0VICTOR/yield-flow"
+              target="_blank"
+              rel="noreferrer"
+              className="footer-link"
+            >
+              github.com/ELLA0VICTOR/yield-flow
+            </a>
+          </div>
+        </div>
+      </footer>
 
       <WalletModal
         open={isWalletModalOpen}

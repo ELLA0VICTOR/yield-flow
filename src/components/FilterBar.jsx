@@ -108,11 +108,20 @@ export function FilterBar({
         <p className="text-sm text-muted-foreground">
           Default view: Base + USDC.
         </p>
-        <div className="flex gap-3">
-          <button type="button" className="retro-button retro-button-secondary" onClick={onReset}>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            className="retro-button retro-button-secondary w-full sm:w-auto"
+            onClick={onReset}
+          >
             Reset
           </button>
-          <button type="button" className="retro-button" onClick={onApply} disabled={isLoading}>
+          <button
+            type="button"
+            className="retro-button w-full sm:w-auto"
+            onClick={onApply}
+            disabled={isLoading}
+          >
             {isLoading ? 'Scanning...' : 'Scan vaults'}
           </button>
         </div>
