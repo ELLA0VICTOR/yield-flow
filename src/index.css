@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #fff8dc;
+    --foreground: #111111;
+    --card: #fffdf6;
+    --muted: #eadcb2;
+    --muted-foreground: #5a4f38;
+    --border: #111111;
+    --primary: #f4c900;
+    --accent: #ffd94d;
+    --success: #5bbf44;
+    --danger: #d64532;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .site-nav {
+    @apply border-b-2 border-border bg-white;
+  }
+
+  .section-band {
+    @apply border-b-2 border-border bg-background;
+  }
+
+  .section-inner {
+    @apply mx-auto w-full max-w-[1380px] px-4 md:px-6;
+  }
+
+  .retro-panel {
+    @apply rounded-none border-2 border-border bg-card shadow-retro;
+  }
+
+  .retro-button {
+    @apply inline-flex items-center justify-center rounded-none border-2 border-border bg-primary px-4 py-2 font-head text-sm uppercase tracking-[0.16em] text-foreground shadow-retro transition duration-150 hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .retro-button-secondary {
+    @apply bg-card;
+  }
+
+  .retro-link {
+    @apply inline-flex items-center rounded-none border-2 border-border bg-white px-3 py-2 text-[11px] font-head uppercase tracking-[0.16em] text-foreground shadow-retro transition duration-150 hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none;
+  }
+
+  .retro-input {
+    @apply w-full rounded-none border-2 border-border bg-white px-4 py-3 text-sm text-foreground shadow-retro outline-none transition focus:translate-x-[2px] focus:translate-y-[2px] focus:shadow-none;
+  }
+
+  .retro-badge {
+    @apply inline-flex items-center rounded-none border-2 border-border bg-card px-3 py-1 text-[10px] font-head uppercase tracking-[0.2em] text-foreground shadow-retro;
+  }
+
+  .retro-badge-success {
+    @apply bg-success text-white;
+  }
+
+  .retro-chip {
+    @apply inline-flex items-center rounded-none border-2 border-border bg-muted px-2 py-1 text-xs font-medium uppercase tracking-[0.12em] text-foreground;
+  }
+
+  .retro-metric {
+    @apply flex flex-col rounded-none border-2 border-border bg-white px-4 py-3 shadow-retro;
+  }
+
+  .metric-label {
+    @apply text-[11px] font-head uppercase tracking-[0.18em] text-muted-foreground;
+  }
+
+  .metric-value {
+    @apply mt-2 text-sm font-bold text-foreground md:text-base;
+  }
+
+  .eyebrow {
+    @apply text-xs font-head uppercase tracking-[0.28em] text-muted-foreground;
+  }
+
+  .field-label {
+    @apply text-[11px] font-head uppercase tracking-[0.18em] text-muted-foreground;
+  }
+
+  .hero-title {
+    @apply mx-auto mt-6 max-w-4xl font-head text-4xl leading-[1.02] text-foreground md:text-6xl;
+  }
+
+  .hero-copy {
+    @apply mx-auto mt-5 max-w-2xl text-base leading-8 text-muted-foreground;
+  }
+
+  .section-heading {
+    @apply max-w-3xl;
+  }
+
+  .section-title {
+    @apply mt-3 font-head text-3xl text-foreground md:text-4xl;
+  }
+
+  .section-copy {
+    @apply mt-4 text-base leading-8 text-muted-foreground;
+  }
+}
