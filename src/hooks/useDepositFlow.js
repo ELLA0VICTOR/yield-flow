@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getTokenAllowance,
   getTokenBalance,
+  getTokenMetadata,
   isNativeToken,
   isWalletAddress,
   approveToken,
@@ -16,6 +17,8 @@ import { useComposerQuote } from './useComposerQuote';
 const STATUS_POLL_INTERVAL = 5000;
 const MAX_STATUS_POLLS = 60;
 const QUOTE_TTL_MS = 2 * 60 * 1000;
+const SHARE_BALANCE_RETRY_DELAY_MS = 1500;
+const SHARE_BALANCE_MAX_RETRIES = 6;
 
 function normalizeAddress(value = '') {
   return String(value || '').toLowerCase();
@@ -144,6 +147,21 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
 
   const primaryToken = vault?.underlyingTokens?.[0];
 
+  const estimateDepositUsd = useCallback(
+    (activeQuote = quote) => {
+      if (!activeQuote?.action?.fromAmount || !primaryToken?.decimals) {
+        return '';
+      }
+
+      try {
+        return formatUnits(activeQuote.action.fromAmount, primaryToken.decimals);
+      } catch {
+        return '';
+      }
+    },
+    [primaryToken?.decimals, quote]
+  );
+
   useEffect(() => {
     if (!quoteExpiresAt) {
       setQuoteTimeRemaining(0);
@@ -198,7 +216,7 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
   }, [primaryToken?.address, resetFlow, vault?.address, wallet.account]);
 
   const refreshVaultShareBalance = useCallback(
-    async (activeQuote = quote) => {
+    async (activeQuote = quote, options = {}) => {
       if (!wallet.provider || !wallet.account || !vault?.address) {
         setVaultShareBalance({
           raw: 0n,
@@ -210,31 +228,54 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
         return;
       }
 
-      const shareDecimals =
+      const {
+        retries = 0,
+        stopWhen = null,
+      } = options;
+      const fallbackDecimals =
         activeQuote?.estimate?.toToken?.decimals ?? vault.lpTokens?.[0]?.decimals ?? 18;
-      const shareSymbol =
+      const fallbackSymbol =
         activeQuote?.estimate?.toToken?.symbol ?? vault.lpTokens?.[0]?.symbol ?? vault.name;
 
       setIsVaultShareLoading(true);
       setVaultShareError('');
 
       try {
-        const nextBalance = await getTokenBalance({
-          tokenAddress: vault.address,
-          account: wallet.account,
-          provider: wallet.provider,
-          decimals: shareDecimals,
-        });
+        for (let attempt = 0; attempt <= retries; attempt += 1) {
+          const metadata = await getTokenMetadata({
+            tokenAddress: vault.address,
+            provider: wallet.provider,
+            fallbackDecimals,
+            fallbackSymbol,
+          });
+          const nextBalance = await getTokenBalance({
+            tokenAddress: vault.address,
+            account: wallet.account,
+            provider: wallet.provider,
+            decimals: metadata.decimals,
+          });
+          const normalizedBalance = {
+            ...nextBalance,
+            symbol: metadata.symbol || fallbackSymbol,
+            decimals: metadata.decimals,
+          };
 
-        setVaultShareBalance({
-          ...nextBalance,
-          symbol: shareSymbol,
-          decimals: shareDecimals,
-        });
+          setVaultShareBalance(normalizedBalance);
+
+          if (!stopWhen || stopWhen(normalizedBalance)) {
+            return normalizedBalance;
+          }
+
+          if (attempt < retries) {
+            await new Promise((resolve) => window.setTimeout(resolve, SHARE_BALANCE_RETRY_DELAY_MS));
+          }
+        }
+
         return {
-          ...nextBalance,
-          symbol: shareSymbol,
-          decimals: shareDecimals,
+          raw: 0n,
+          formatted: '0',
+          symbol: fallbackSymbol,
+          decimals: fallbackDecimals,
         };
       } catch (shareBalanceError) {
         setVaultShareError(shareBalanceError.message || 'Unable to verify vault receipt balance');
@@ -491,13 +532,17 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
         setStatusLabel('Deposit complete');
         setSuccessMessage('Deposit confirmed on-chain.');
         await refreshBalanceAndAllowance(quote, quote.action?.fromAmount);
-        const nextShareBalance = await refreshVaultShareBalance(quote);
+        const nextShareBalance = await refreshVaultShareBalance(quote, {
+          retries: SHARE_BALANCE_MAX_RETRIES,
+          stopWhen: (nextBalance) => BigInt(nextBalance?.raw || 0) > 0n,
+        });
         onDepositSuccess?.(
           wallet.account,
           buildFallbackVaultPosition({
             vault,
             walletAddress: wallet.account,
             shareBalance: nextShareBalance,
+            balanceUsd: estimateDepositUsd(quote),
           })
         );
         return;
@@ -517,13 +562,17 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
         if (status.status === 'DONE') {
           setStatusLabel('Deposit complete');
           setSuccessMessage('Cross-chain deposit completed successfully.');
-          const nextShareBalance = await refreshVaultShareBalance(quote);
+          const nextShareBalance = await refreshVaultShareBalance(quote, {
+            retries: SHARE_BALANCE_MAX_RETRIES,
+            stopWhen: (nextBalance) => BigInt(nextBalance?.raw || 0) > 0n,
+          });
           onDepositSuccess?.(
             wallet.account,
             buildFallbackVaultPosition({
               vault,
               walletAddress: wallet.account,
               shareBalance: nextShareBalance,
+              balanceUsd: estimateDepositUsd(quote),
             })
           );
           break;
@@ -550,6 +599,7 @@ export function useDepositFlow({ vault, wallet, onDepositSuccess }) {
     }
   }, [
     amount,
+    estimateDepositUsd,
     onDepositSuccess,
     primaryToken,
     quote,

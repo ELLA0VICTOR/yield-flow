@@ -1,6 +1,11 @@
 const FALLBACK_STORAGE_KEY = 'yieldflow:fallback-positions';
 
-export function buildFallbackVaultPosition({ vault, walletAddress, shareBalance }) {
+export function buildFallbackVaultPosition({
+  vault,
+  walletAddress,
+  shareBalance,
+  balanceUsd = '',
+}) {
   if (
     !vault?.address ||
     !walletAddress ||
@@ -21,7 +26,7 @@ export function buildFallbackVaultPosition({ vault, walletAddress, shareBalance 
       symbol: shareBalance.symbol || vault.lpTokens?.[0]?.symbol || vault.name,
       decimals: shareBalance.decimals ?? vault.lpTokens?.[0]?.decimals ?? 18,
     },
-    balanceUsd: '',
+    balanceUsd: balanceUsd === null || balanceUsd === undefined ? '' : String(balanceUsd),
     balanceNative: shareBalance.raw?.toString?.() || '0',
     balanceFormatted: shareBalance.formatted || '0',
   };
@@ -68,12 +73,23 @@ export function upsertStoredFallbackPosition(position) {
 
   const positions = readStoredFallbackPositions();
   const nextKey = `${position.walletAddress.toLowerCase()}-${position.chainId}-${position.asset.address.toLowerCase()}`;
+  const existingPosition = positions.find((entry) => {
+    const entryKey = `${entry.walletAddress?.toLowerCase?.() || ''}-${entry.chainId}-${entry.asset?.address?.toLowerCase?.() || ''}`;
+    return entryKey === nextKey;
+  });
   const nextPositions = positions.filter((entry) => {
     const entryKey = `${entry.walletAddress?.toLowerCase?.() || ''}-${entry.chainId}-${entry.asset?.address?.toLowerCase?.() || ''}`;
     return entryKey !== nextKey;
   });
 
-  nextPositions.push(position);
+  nextPositions.push({
+    ...existingPosition,
+    ...position,
+    balanceUsd:
+      position.balanceUsd === '' || position.balanceUsd === null || position.balanceUsd === undefined
+        ? existingPosition?.balanceUsd || ''
+        : position.balanceUsd,
+  });
   writeStoredFallbackPositions(nextPositions);
 }
 

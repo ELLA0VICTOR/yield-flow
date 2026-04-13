@@ -4,6 +4,8 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
   'function balanceOf(address owner) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
 ];
 
 const ERC4626_ABI = [
@@ -189,6 +191,33 @@ export async function getTokenBalance({ tokenAddress, account, provider, decimal
   return {
     raw: balance,
     formatted: formatUnits(balance, decimals),
+  };
+}
+
+export async function getTokenMetadata({
+  tokenAddress,
+  provider,
+  fallbackDecimals = 18,
+  fallbackSymbol = '',
+}) {
+  if (!provider || !tokenAddress || isNativeToken(tokenAddress)) {
+    return {
+      decimals: fallbackDecimals,
+      symbol: fallbackSymbol,
+    };
+  }
+
+  const contract = new Contract(tokenAddress, ERC20_ABI, provider);
+
+  const [decimalsResult, symbolResult] = await Promise.allSettled([
+    contract.decimals(),
+    contract.symbol(),
+  ]);
+
+  return {
+    decimals:
+      decimalsResult.status === 'fulfilled' ? Number(decimalsResult.value) : fallbackDecimals,
+    symbol: symbolResult.status === 'fulfilled' ? symbolResult.value : fallbackSymbol,
   };
 }
 
