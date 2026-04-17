@@ -1,19 +1,19 @@
 {
   "rewrites": [
     {
-      "source": "/api/earn/v1/earn/chains",
+      "source": "/api/earn/v1/chains",
       "destination": "/api/earn/chains"
     },
     {
-      "source": "/api/earn/v1/earn/protocols",
+      "source": "/api/earn/v1/protocols",
       "destination": "/api/earn/protocols"
     },
     {
-      "source": "/api/earn/v1/earn/vaults",
+      "source": "/api/earn/v1/vaults",
       "destination": "/api/earn/vaults"
     },
     {
-      "source": "/api/earn/v1/earn/portfolio/:address/positions",
+      "source": "/api/earn/v1/portfolio/:address/positions",
       "destination": "/api/earn/portfolio?address=:address"
     },
     {

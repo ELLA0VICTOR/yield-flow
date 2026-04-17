@@ -56,6 +56,12 @@ export async function proxyLifiRequest(req, res, upstreamBase, options = {}) {
   try {
     assertAllowedMethod(req.method, allowedMethods)
 
+    if (!process.env.LIFI_API_KEY) {
+      const error = new Error('LI.FI API key is missing on the server')
+      error.statusCode = 500
+      throw error
+    }
+
     const normalizedPath = upstreamPath || resolvePathSegments(req.query.path).join('/')
 
     if (allowedPathPatterns.length > 0) {
@@ -66,10 +72,8 @@ export async function proxyLifiRequest(req, res, upstreamBase, options = {}) {
     const upstreamUrl = new URL(normalizedPath, normalizedBase)
     appendSearchParams(upstreamUrl, mapQuery ? mapQuery(req.query) : req.query)
 
-    const headers = {}
-
-    if (process.env.LIFI_API_KEY) {
-      headers['x-lifi-api-key'] = process.env.LIFI_API_KEY
+    const headers = {
+      'x-lifi-api-key': process.env.LIFI_API_KEY,
     }
 
     if (req.headers.accept) {
