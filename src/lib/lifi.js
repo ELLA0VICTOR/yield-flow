@@ -12,14 +12,6 @@ function getApiErrorMessage({ status, payload, context }) {
     return 'LI.FI is rate limiting requests right now. Please try again shortly.';
   }
 
-  if (status === 401) {
-    return 'YieldFlow is missing a valid LI.FI API key for this request.';
-  }
-
-  if (status === 500 && message.includes('api key')) {
-    return 'YieldFlow server configuration is missing the LI.FI API key.';
-  }
-
   if (status === 404 || status === 403 || message.includes('path not allowed')) {
     const byContext = {
       reference: 'YieldFlow could not load LI.FI reference data right now.',
@@ -73,11 +65,11 @@ export async function fetchVaults(filters) {
     params.set('cursor', filters.cursor);
   }
 
-  return requestJson(`${EARN_PROXY_BASE}/v1/vaults?${params.toString()}`, 'vaults');
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/vaults?${params.toString()}`, 'vaults');
 }
 
 export async function fetchChains() {
-  return requestJson(`${EARN_PROXY_BASE}/v1/chains`, 'reference');
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/chains`, 'reference');
 }
 
 export async function fetchWalletChains() {
@@ -86,11 +78,11 @@ export async function fetchWalletChains() {
 }
 
 export async function fetchProtocols() {
-  return requestJson(`${EARN_PROXY_BASE}/v1/protocols`, 'reference');
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/protocols`, 'reference');
 }
 
 export async function fetchPortfolioPositions(address) {
-  return requestJson(`${EARN_PROXY_BASE}/v1/portfolio/${address}/positions`, 'portfolio');
+  return requestJson(`${EARN_PROXY_BASE}/v1/earn/portfolio/${address}/positions`, 'portfolio');
 }
 
 export async function fetchComposerQuote(params) {
